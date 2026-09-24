@@ -239,6 +239,28 @@ manifest that proves what produced it, because `build`, `target`, `obj` and
 somebody's source. Idleness is judged from a project's own files, never from its
 build output.
 
+### Unused applications
+
+`reclaim analyze --apps` lists desktop applications not used in 90 days
+(`--idle N` to change that), each with the command that would remove it. It
+removes nothing: an uninstalled app does not come back by itself, and neither
+does whatever it kept.
+
+An app is only listed on evidence, and every signal used can err one way only —
+towards "used":
+
+- the **access time** of the binary it launches. `relatime` still records a
+  read at most once a day, which is plenty for months of disuse; on a `noatime`
+  mount there is no answer and the app is not judged
+- the app's own data directory for snaps (`~/snap/<name>`) and flatpaks
+  (`~/.var/app/<id>`)
+- GNOME Shell's record of when each app last ran
+
+A deb package is skipped when it was installed as a dependency, or when another
+installed package depends on or recommends it — removing `ibus` removes
+`ubuntu-desktop`, and the next autoremove takes everything that was holding.
+Apps unpacked into `/opt` are sized as their directory.
+
 ### Stale installers
 
 ```bash
