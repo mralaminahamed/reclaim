@@ -294,8 +294,11 @@ func cmdClean(args []string) int {
 	r := &runner.Runner{Apply: *apply, TargetBytes: targetBytes, TargetPath: targetPath}
 	results := r.Run(selected)
 
+	// The record belongs to the user who ran the command, sudo or not:
+	// "reclaim history" runs as them and reads their home.
+	who := invokingOwner()
 	log := &oplog.Log{
-		Path:     oplog.DefaultPath(home),
+		Path:     oplog.DefaultPath(who.home),
 		Disabled: os.Getenv("RECLAIM_NO_OPLOG") != "",
 	}
 	var total int64
@@ -318,6 +321,11 @@ func cmdClean(args []string) int {
 		}
 		total += res.Freed
 		ran = append(ran, res.Unit)
+	}
+	if *apply && !log.Disabled {
+		if err := who.handBack(log.Path); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, "operations log written but not handed back:", err)
+		}
 	}
 
 	s := report.Summary{
@@ -447,8 +455,7 @@ func cmdHistory(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	home, _ := os.UserHomeDir()
-	entries, err := (&oplog.Log{Path: oplog.DefaultPath(home)}).Read(*limit)
+	entries, err := (&oplog.Log{Path: oplog.DefaultPath(invokingOwner().home)}).Read(*limit)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
