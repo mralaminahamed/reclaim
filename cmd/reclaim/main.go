@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mralaminahamed/reclaim/internal/apps"
 	"github.com/mralaminahamed/reclaim/internal/catalog"
 	"github.com/mralaminahamed/reclaim/internal/config"
 	"github.com/mralaminahamed/reclaim/internal/discover"
@@ -393,6 +394,8 @@ func cmdAnalyze(args []string) int {
 	min := fs.String("min", "500M", "only report directories at least this large")
 	stale := fs.Bool("installers", false, "also report stale downloaded installers")
 	older := fs.Int("older", 90, "how many days old an installer must be to be stale")
+	idleApps := fs.Bool("apps", false, "also report applications unused for a long time")
+	idle := fs.Int("idle", 90, "how many days unused an application must be to be reported")
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -411,6 +414,14 @@ func cmdAnalyze(args []string) int {
 		sum.Installers = installers.Find(installers.DefaultEnv(),
 			filepath.Join(home, "Downloads"),
 			time.Duration(*older)*24*time.Hour)
+	}
+	if *idleApps {
+		// Uninstalling is not cleaning: an app does not come back by itself,
+		// and neither does what it kept. Reported with its removal command,
+		// never acted on.
+		res := apps.Find(apps.DefaultEnv(home), time.Duration(*idle)*24*time.Hour)
+		sum.Apps, sum.AppsUnknown, sum.AppsNeeded = res.Apps, res.Unknown, res.Needed
+		sum.AppsIdleDays = *idle
 	}
 	if *asJSON {
 		if err := report.JSON(os.Stdout, sum); err != nil {

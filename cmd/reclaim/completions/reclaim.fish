@@ -55,6 +55,8 @@ complete -c reclaim -n '__fish_seen_subcommand_from clean' -l trash -d 'opt in t
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l min -r -d 'minimum size to report'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l installers -d 'also report stale downloads'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l older -r -d 'days before an installer is stale'
+complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l apps -d 'also report applications unused for a long time'
+complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l idle -r -d 'days unused before an app is reported'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l json -d 'machine-readable output'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -s n -r -d 'how many entries'
 complete -c reclaim -n '__fish_seen_subcommand_from history' -s n -r -d 'how many entries'

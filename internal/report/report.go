@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/mralaminahamed/reclaim/internal/apps"
 	"github.com/mralaminahamed/reclaim/internal/discover"
 	"github.com/mralaminahamed/reclaim/internal/fsutil"
 	"github.com/mralaminahamed/reclaim/internal/installers"
@@ -31,7 +32,13 @@ type Summary struct {
 	Heavy []discover.Heavy
 	// Installers are stale downloads. Advisory only: nothing here is ever
 	// selected, planned or deleted.
-	Installers   []installers.Installer
+	Installers []installers.Installer
+	// Apps are applications idle past a bound. Advisory, like installers.
+	// AppsUnknown counts those passed over for want of any usage evidence.
+	Apps         []apps.App
+	AppsUnknown  int
+	AppsNeeded   int
+	AppsIdleDays int
 	TotalBytes   int64
 	DryRun       bool
 	StoppedEarly bool
@@ -81,6 +88,16 @@ func JSON(w io.Writer, s Summary) error {
 			"reason": i.Reason})
 	}
 	out["installers"] = inst
+
+	idle := make([]map[string]any, 0, len(s.Apps))
+	for _, a := range s.Apps {
+		idle = append(idle, map[string]any{"name": a.Name, "source": string(a.Source),
+			"package": a.Package, "bytes": a.Bytes, "last_used": a.LastUsed,
+			"remove": a.Remove})
+	}
+	out["idle_apps"] = idle
+	out["idle_apps_unknown"] = s.AppsUnknown
+	out["idle_apps_needed"] = s.AppsNeeded
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -172,6 +189,25 @@ func Text(w io.Writer, s Summary) {
 				line += "  " + i.Reason
 			}
 			fmt.Fprintln(w, line)
+		}
+	}
+
+	if len(s.Apps) > 0 || s.AppsUnknown > 0 {
+		fmt.Fprintf(w, "\n== Apps unused for %d+ days (advisory, never removed) ==\n", s.AppsIdleDays)
+		for _, a := range s.Apps {
+			fmt.Fprintf(w, "  • %-38s %10s  %s, last used %s\n", a.Name,
+				fsutil.Human(a.Bytes), a.Source, a.LastUsed.Format("2006-01-02"))
+			fmt.Fprintf(w, "      %s\n", a.Remove)
+		}
+		if len(s.Apps) == 0 {
+			fmt.Fprintln(w, "  none")
+		}
+		// Say what was not judged, so an empty list is not read as "all used".
+		if s.AppsNeeded > 0 {
+			fmt.Fprintf(w, "  %d more idle but required by other packages, not listed\n", s.AppsNeeded)
+		}
+		if s.AppsUnknown > 0 {
+			fmt.Fprintf(w, "  %d more with no usage record to judge by, not listed\n", s.AppsUnknown)
 		}
 	}
 

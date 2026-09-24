@@ -68,6 +68,8 @@ _reclaim() {
         analyze)    _arguments '--min[only report dirs at least this large]:size' \
                                 '--installers[also report stale downloads]' \
                                 '--older[days before an installer is stale]:days' \
+                                '--apps[also report applications unused for a long time]' \
+                                '--idle[days unused before an app is reported]:days' \
                                 '--json[machine-readable output]' \
                                 '-n[how many entries]:count' ;;
         history)    _arguments '-n[how many entries]:count' ;;
