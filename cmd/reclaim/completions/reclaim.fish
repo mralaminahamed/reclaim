@@ -4,7 +4,7 @@ function __reclaim_units
     reclaim __units 2>/dev/null
 end
 
-set -l cmds clean status analyze history version completion
+set -l cmds clean status analyze history index version completion
 complete -c reclaim -f
 
 complete -c reclaim -n "not __fish_seen_subcommand_from $cmds" -a clean -d 'report reclaimable space'

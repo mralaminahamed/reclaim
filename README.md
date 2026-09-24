@@ -239,6 +239,31 @@ manifest that proves what produced it, because `build`, `target`, `obj` and
 somebody's source. Idleness is judged from a project's own files, never from its
 build output.
 
+### The index
+
+```bash
+reclaim index                  # snapshot every filesystem; later runs refresh
+reclaim index --full           # re-read everything
+reclaim index show [DIR]       # largest directories inside DIR, instantly
+reclaim index cold [DIR]       # largest subtrees untouched for a year (--days, --min)
+```
+
+A full walk of every filesystem took 16s on a 200GB machine; a refresh took
+2.4s, and `analyze` answered from the index in 0.3s where walking the home
+directory had taken 2m41s. Each filesystem is its own tree, never crossed
+into from another, so nothing is counted twice.
+
+**The index is for looking, never for deleting.** `clean` measures everything
+live at the moment it runs. A snapshot is out of date by definition, and "it was
+a cache an hour ago" is not a reason to delete anything now.
+
+A refresh re-reads only directories whose modification time changed — which
+happens whenever an entry is added, removed or renamed. It does **not** see a
+file growing in place, like a log or a database. `analyze` therefore only trusts
+an index less than a day old and says when it used one; `--full` rebuilds
+exactly. Directories the user cannot read are counted and reported; run as root
+to include them.
+
 ### Unused applications
 
 `reclaim analyze --apps` lists desktop applications not used in 90 days

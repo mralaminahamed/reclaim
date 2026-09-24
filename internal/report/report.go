@@ -30,6 +30,9 @@ type Summary struct {
 	// not given. They cost nothing to report and are the user's to claim.
 	OptIn []*unit.Unit
 	Heavy []discover.Heavy
+	// HeavyFrom says where Heavy came from when it was not a live walk, so a
+	// snapshot is never presented as the current state of the disk.
+	HeavyFrom string
 	// Installers are stale downloads. Advisory only: nothing here is ever
 	// selected, planned or deleted.
 	Installers []installers.Installer
@@ -175,6 +178,9 @@ func Text(w io.Writer, s Summary) {
 
 	if len(s.Heavy) > 0 {
 		fmt.Fprintln(w, "\n== Large directories (advisory, never deleted) ==")
+		if s.HeavyFrom != "" {
+			fmt.Fprintf(w, "  (%s)\n", s.HeavyFrom)
+		}
 		for _, h := range s.Heavy {
 			fmt.Fprintf(w, "  • %-38s %10s\n", h.Path, fsutil.Human(h.Bytes))
 		}

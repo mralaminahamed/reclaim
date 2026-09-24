@@ -8,7 +8,7 @@ _reclaim() {
     local cur prev cmds
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    cmds="clean status analyze history version completion"
+    cmds="clean status analyze history index version completion"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )

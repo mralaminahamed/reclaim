@@ -14,6 +14,7 @@ _reclaim() {
         'status:show filesystems and disk pressure'
         'analyze:list the largest directories, deleting nothing'
         'history:show what past runs deleted'
+        'index:snapshot where the space is'
         'version:print the version'
         'completion:print a shell completion script'
     )
