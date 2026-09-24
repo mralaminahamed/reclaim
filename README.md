@@ -135,7 +135,9 @@ units additionally require `--allow-lossy`.
 | `--trash` | the desktop trash — lossy |
 | `--models` | huggingface, torch, whisper and LM Studio model stores, Chrome's on-device AI model |
 | `--flatpak` | unused runtimes, and each app's sandboxed cache |
-| `--docker`, `--docker-volumes` | Docker prune — volumes may hold databases |
+| `--docker` | build cache, dangling images, unused networks |
+| `--docker-containers` | stopped containers, each named in the dry run — a stopped container can hold state nowhere else |
+| `--docker-volumes` | unused volumes — these may hold databases |
 | `--gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` |
 | `--maven` | `~/.m2/repository` |
 | `--jetbrains` | JetBrains IDE caches |
@@ -263,6 +265,8 @@ file growing in place, like a log or a database. `analyze` therefore only trusts
 an index less than a day old and says when it used one; `--full` rebuilds
 exactly. Directories the user cannot read are counted and reported; run as root
 to include them.
+Under `sudo`, the index is still written to the invoking user's home and handed
+back to them, so `analyze` run as that user finds it.
 
 ### Unused applications
 

@@ -154,3 +154,23 @@ func TestHeavyweightsRegistersNothing(t *testing.T) {
 		t.Error("Heavyweights registered a deletable unit")
 	}
 }
+
+// The tool's own cache directory holds the index. It is regenerable, but a
+// run that deletes it throws away the one thing that makes the next analyze
+// instant -- and it did exactly that on a real machine.
+func TestXDGCachesNeverClaimsReclaimsOwnDirectory(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"reclaim", "other"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := unit.NewRegistry()
+	XDGCaches(r, root)
+	if _, ok := r.Get("xdg-reclaim"); ok {
+		t.Error("claimed reclaim's own cache directory")
+	}
+	if _, ok := r.Get("xdg-other"); !ok {
+		t.Error("other caches must still be claimed")
+	}
+}

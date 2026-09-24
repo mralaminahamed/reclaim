@@ -38,38 +38,15 @@ type Options struct {
 // target is met with the fewest deletions.
 func Select(r *unit.Registry, o Options) (selected, withheldLossy []*unit.Unit) {
 	for _, u := range r.All() {
-		forced := u.Flag != "" && o.Forced[u.Flag]
-
-		if !matchesAny(u.ID, o.Only, true) {
-			continue
-		}
-		if matchesAny(u.ID, o.Exclude, false) {
-			continue
-		}
-		// A unit carrying a flag is opt-in: it runs only when that flag is
-		// given. The tier ceiling is a separate, additional limit, so a high
-		// ceiling must never silently authorise a flagged unit -- otherwise a
-		// plain "clean --apply" would wipe caches nobody asked about.
-		if u.Flag != "" && !forced {
-			continue
-		}
-		// The reversibility ceiling is absolute. An opt-in flag authorises a
-		// unit but can never authorise destroying information.
-		if !u.Reversible && !o.AllowLossy {
+		switch eligible(u, o) {
+		case lossy:
 			withheldLossy = append(withheldLossy, u)
-			continue
+		case ok:
+			if u.LockedBy != "" {
+				continue
+			}
+			selected = append(selected, u)
 		}
-		if u.Tier > o.TierCap && !forced {
-			continue
-		}
-
-		if u.LockedBy != "" {
-			continue
-		}
-		if o.TargetMount != "" && u.Mount != "" && u.Mount != o.TargetMount && !forced {
-			continue
-		}
-		selected = append(selected, u)
 	}
 
 	sort.SliceStable(selected, func(i, j int) bool {
@@ -79,6 +56,53 @@ func Select(r *unit.Registry, o Options) (selected, withheldLossy []*unit.Unit) 
 		return selected[i].Bytes > selected[j].Bytes
 	})
 	return selected, withheldLossy
+}
+
+type verdict int
+
+const (
+	no verdict = iota
+	ok
+	lossy
+)
+
+// eligible decides a unit on everything except whether an app holds it.
+func eligible(u *unit.Unit, o Options) verdict {
+	forced := u.Flag != "" && o.Forced[u.Flag]
+	if !matchesAny(u.ID, o.Only, true) || matchesAny(u.ID, o.Exclude, false) {
+		return no
+	}
+	// A unit carrying a flag is opt-in: it runs only when that flag is
+	// given. The tier ceiling is a separate, additional limit, so a high
+	// ceiling must never silently authorise a flagged unit -- otherwise a
+	// plain "clean --apply" would wipe caches nobody asked about.
+	if u.Flag != "" && !forced {
+		return no
+	}
+	// The reversibility ceiling is absolute. An opt-in flag authorises a
+	// unit but can never authorise destroying information.
+	if !u.Reversible && !o.AllowLossy {
+		return lossy
+	}
+	if u.Tier > o.TierCap && !forced {
+		return no
+	}
+	if o.TargetMount != "" && u.Mount != "" && u.Mount != o.TargetMount && !forced {
+		return no
+	}
+	return ok
+}
+
+// Locked returns the units a running app holds that this run would otherwise
+// have taken. Only for those is "quit it, then re-run" true.
+func Locked(r *unit.Registry, o Options) []*unit.Unit {
+	var out []*unit.Unit
+	for _, u := range r.All() {
+		if u.LockedBy != "" && eligible(u, o) == ok {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // matchesAny reports whether id matches one of the patterns. Patterns are unit

@@ -21,7 +21,7 @@ _reclaim() {
             return
             ;;
         --with)
-            COMPREPLY=( $(compgen -W "gradle maven jetbrains browsers playwright docker docker-volumes claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash" -- "$cur") )
+            COMPREPLY=( $(compgen -W "gradle maven jetbrains browsers playwright docker docker-containers docker-volumes claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash" -- "$cur") )
             return
             ;;
         completion)
@@ -37,7 +37,7 @@ _reclaim() {
         clean)
             COMPREPLY=( $(compgen -W "--apply --yes --free --auto --below --tier --allow-lossy \
                 --discover --json --workers --sites-idle --sites-root --only --exclude --with \
-                --gradle --maven --jetbrains --browsers --playwright --docker --docker-volumes \
+                --gradle --maven --jetbrains --browsers --playwright --docker --docker-containers --docker-volumes \
                 --claude-vm --system --claude-jobs --claude-plugins --claude-history \
                 --heavy --flatpak --kernels --models --xcode --simulators --obsolete --trash" -- "$cur") )
             ;;

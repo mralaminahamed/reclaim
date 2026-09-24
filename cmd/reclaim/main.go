@@ -93,7 +93,7 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 // this one list, so a new group cannot be half-wired: defined but never
 // honoured, or honoured under a name nothing defines.
 var optInFlags = []string{"gradle", "maven", "jetbrains", "browsers", "playwright",
-	"docker", "docker-volumes", "claude-vm", "system", "claude-jobs", "claude-plugins",
+	"docker", "docker-containers", "docker-volumes", "claude-vm", "system", "claude-jobs", "claude-plugins",
 	"claude-history", "heavy", "flatpak", "kernels", "models", "xcode", "simulators",
 	"obsolete", "trash"}
 
@@ -284,12 +284,7 @@ func cmdClean(args []string) int {
 	// What Select passed over for want of a flag. Not running these is the
 	// point of a flag; not mentioning them would just hide the space.
 	optIn := plan.OptIn(reg, opts)
-	var locked []*unit.Unit
-	for _, u := range reg.All() {
-		if u.LockedBy != "" {
-			locked = append(locked, u)
-		}
-	}
+	locked := plan.Locked(reg, opts)
 
 	if *apply && !*yes && !confirm(selected) {
 		fmt.Println("aborted")

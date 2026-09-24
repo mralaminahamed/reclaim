@@ -86,3 +86,29 @@ func TestOptInSkipsEmptyUnits(t *testing.T) {
 		t.Fatalf("got %v, want nothing", got)
 	}
 }
+
+// A locked unit is reported with "quit it, then re-run". That advice is only
+// true of a unit this run would otherwise have taken; for anything else it
+// sends the user to quit an app for nothing.
+func TestLockedListsOnlyUnitsTheRunWouldOtherwiseTake(t *testing.T) {
+	r := reg(
+		&unit.Unit{ID: "chrome-cache", Tier: unit.TierColdReload, Reversible: true,
+			Flag: "--browsers", Bytes: 700 << 20, LockedBy: "chrome"},
+		&unit.Unit{ID: "zed-logs", Tier: unit.TierArtifact, Reversible: true,
+			Bytes: 1 << 20, LockedBy: "zed"},
+		&unit.Unit{ID: "history", Tier: unit.TierLossy, Reversible: false,
+			Bytes: 1 << 30, LockedBy: "claude"},
+		&unit.Unit{ID: "docker-prune", Tier: unit.TierIrreplaceable, Reversible: true,
+			Flag: "--docker", Bytes: 1},
+	)
+	o := Options{TierCap: unit.TierIrreplaceable}
+	eq(t, ids(Locked(r, o)), []string{"zed-logs"})
+
+	o.Forced = map[string]bool{"--browsers": true}
+	eq(t, ids(Locked(r, o)), []string{"chrome-cache", "zed-logs"})
+
+	o.Only = []string{"docker-*"}
+	if got := ids(Locked(r, o)); len(got) != 0 {
+		t.Errorf("--only docker-* still lists %v", got)
+	}
+}

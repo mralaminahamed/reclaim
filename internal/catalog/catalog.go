@@ -23,6 +23,10 @@ type Env struct {
 	Home string
 	// Has reports whether a binary is on PATH.
 	Has func(bin string) bool
+	// Docker lists what docker would remove. Nil or failing means the
+	// container unit is not offered: what cannot be listed cannot be
+	// previewed.
+	Docker func() (DockerState, error)
 }
 
 // DefaultEnv returns an Env describing this machine.
@@ -30,7 +34,7 @@ func DefaultEnv(home string) Env {
 	return Env{Home: home, Has: func(bin string) bool {
 		_, err := exec.LookPath(bin)
 		return err == nil
-	}}
+	}, Docker: dockerState}
 }
 
 type builder struct {
@@ -233,13 +237,7 @@ func Build(env Env) *unit.Registry {
 	// Docker is usually the single biggest reclaim on a developer machine, but
 	// pruning volumes can drop database data, so it stays irreversible.
 	if env.Has != nil && env.Has("docker") {
-		b.r.Add(&unit.Unit{ID: "docker-prune", Tier: unit.TierIrreplaceable, Reversible: false,
-			Label: "docker prune", Kind: unit.KindCmd, Flag: "--docker",
-			Command:   "docker builder prune -f; docker container prune -f; docker network prune -f; docker image prune -f",
-			MountHint: "/var/lib/docker"})
-		b.r.Add(&unit.Unit{ID: "docker-volumes", Tier: unit.TierIrreplaceable, Reversible: false,
-			Label: "docker volumes", Kind: unit.KindCmd, Flag: "--docker-volumes",
-			Command: "docker volume prune -f", MountHint: "/var/lib/docker"})
+		b.docker()
 	}
 	return b.r
 }

@@ -53,14 +53,19 @@ func IsCacheName(name string) bool {
 	return false
 }
 
+// OwnCacheDir is reclaim's own directory under the cache root.
+const OwnCacheDir = "reclaim"
+
 // XDGCaches claims every directory directly inside the XDG cache root that no
 // registered unit already owns.
 func XDGCaches(r *unit.Registry, cacheRoot string) {
 	for _, d := range subdirs(cacheRoot) {
-		if r.Claimed(d) {
+		name := filepath.Base(d)
+		// Our own directory holds the index. Regenerable, but deleting it
+		// discards the thing that makes the next analyze instant.
+		if r.Claimed(d) || name == OwnCacheDir {
 			continue
 		}
-		name := filepath.Base(d)
 		r.Add(&unit.Unit{
 			ID:         "xdg-" + strings.ReplaceAll(name, " ", "-"),
 			Tier:       unit.TierArtifact,
