@@ -66,6 +66,10 @@ type Unit struct {
 	// the files that kernel put on disk. Reporting nothing for those is a worse
 	// answer than the one available.
 	SizePaths []string
+	// SizeKeep is what the command deliberately leaves behind out of what
+	// SizePaths measures: a bounded journal vacuum keeps its window. It is
+	// subtracted from the measurement, never below zero.
+	SizeKeep int64
 	// MinAge, when set, makes Paths directories of records rather than one
 	// disposable thing: only entries last modified longer ago than this are
 	// measured or removed, and the directory itself is never touched. A crash

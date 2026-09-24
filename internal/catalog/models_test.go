@@ -82,3 +82,18 @@ func TestDiscoveryCannotReclaimTheHuggingfaceCache(t *testing.T) {
 		t.Fatal("the huggingface cache is unclaimed, so --discover would re-register it")
 	}
 }
+
+// Emptying the trash removes the one chance to take a deletion back, so it is
+// lossy: it needs --trash and --allow-lossy both.
+func TestTrashIsLossyAndOptIn(t *testing.T) {
+	home := t.TempDir()
+	mkdir(t, filepath.Join(home, ".local/share/Trash/files"))
+	r := Build(Env{Home: home, Has: func(string) bool { return false }})
+	u, ok := r.Get("trash")
+	if !ok {
+		t.Fatal("trash not registered")
+	}
+	if u.Reversible || u.Flag != "--trash" || u.Tier != unit.TierLossy {
+		t.Errorf("reversible %v flag %q tier %v", u.Reversible, u.Flag, u.Tier)
+	}
+}

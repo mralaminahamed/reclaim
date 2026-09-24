@@ -19,7 +19,7 @@ _reclaim() {
     )
     groups=(gradle maven jetbrains browsers playwright docker docker-volumes
             claude-vm system claude-jobs claude-plugins claude-history
-            heavy flatpak kernels models xcode simulators)
+            heavy flatpak kernels models xcode simulators obsolete trash)
     clean_flags=(
         '--apply[actually delete]'
         '--yes[do not prompt]'
@@ -35,7 +35,7 @@ _reclaim() {
         '--sites-root[where projects live]:directory:_files -/'
         '--only[restrict to these unit ids]:unit:_reclaim_units'
         '--exclude[drop these unit ids]:unit:_reclaim_units'
-        '--with[opt-in flag by name]:group:(gradle maven jetbrains browsers playwright docker docker-volumes claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators)'
+        '--with[opt-in flag by name]:group:(gradle maven jetbrains browsers playwright docker docker-volumes claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash)'
         '--gradle[opt in to gradle units]'
         '--maven[opt in to maven units]'
         '--jetbrains[opt in to jetbrains units]'
@@ -54,6 +54,8 @@ _reclaim() {
         '--models[opt in to model stores]'
         '--xcode[opt in to Xcode derived data, device support and archives]'
         '--simulators[opt in to simulator devices]'
+        '--obsolete[opt in to leftover config and old rotated logs]'
+        '--trash[opt in to emptying the trash]'
     )
 
     if (( CURRENT == 2 )); then

@@ -54,8 +54,13 @@ func Build(env Env) *unit.Registry {
 	b.cmdAt("brew-native", "brew cleanup", "brew", "brew cleanup --prune=all", unit.TierPkgCache)
 
 	b.paths("thumbnails", "thumbnails", unit.TierNative, true, "", ".cache/thumbnails")
-	b.paths("trash", "Trash", unit.TierNative, true, "",
-		".local/share/Trash/files", ".local/share/Trash/info")
+	// The trash is what the user already chose to delete but kept the option
+	// of taking back. Emptying it removes that option, so it is lossy and
+	// opt-in -- it used to run by default as though it were a cache. File
+	// managers recreate the directories on demand.
+	b.paths("trash", "trash", unit.TierLossy, false, "--trash",
+		".local/share/Trash/files", ".local/share/Trash/info",
+		".local/share/Trash/expunged")
 
 	// Tier 1: package-manager cache leftovers, re-downloaded on demand.
 	//

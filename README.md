@@ -130,7 +130,9 @@ units additionally require `--allow-lossy`.
 | Flag | Reclaims |
 |---|---|
 | `--system` | the package-manager cache, a bounded journal vacuum, old snap revisions, crash dumps |
-| `--kernels` | superseded kernel packages, never the running one |
+| `--kernels` | superseded kernel packages and what removed kernels left in `/lib/modules`, never the running one |
+| `--obsolete` | config left by removed-but-not-purged packages, rotated logs over 30 days old — lossy |
+| `--trash` | the desktop trash — lossy |
 | `--models` | huggingface, torch, whisper and LM Studio model stores |
 | `--flatpak` | unused runtimes, and each app's sandboxed cache |
 | `--docker`, `--docker-volumes` | Docker prune — volumes may hold databases |
@@ -155,6 +157,10 @@ than by parsing a distribution name. Each is a cache clean and nothing more.
 None of them runs an autoremove: that decides for itself what is orphaned, and
 the result cannot be previewed honestly.
 
+The dry run reports what each will actually free. `apt-get clean` counts the two
+binary package indexes it also drops, not only the archive; the journal vacuum
+counts the journal less the window it keeps.
+
 It needs root, and `reclaim` asks for it once up front via `sudo -v` — a single
 password prompt rather than one per unit. If elevation is declined the system
 units are reported under **Failed** with the reason, never counted as reclaimed.
@@ -171,6 +177,30 @@ Debian-only, and not because the others are harder: `dnf` enforces
 rather than accumulated. On those systems there is nothing to collect, and a
 kernel unit would be inventing work.
 
+A removed kernel is not quite gone. Its modules package reruns `depmod` on the
+way out, which rewrites the module indexes into `/lib/modules/<version>` — a
+directory of indexes for modules that no longer exist — and dpkg keeps the
+package in the `rc` state. `--kernels` takes both, but only for a version
+nothing still claims: no installed package of that version, not the running
+kernel, and no image in `/boot`. The last check protects a kernel installed
+outside dpkg, which has modules and an image and no package at all.
+
+### Obsolete files
+
+`--obsolete` covers what outlived the thing that needed it, and all of it is
+lossy, so it also needs `--allow-lossy`:
+
+- **Config of removed packages.** `apt remove` without `--purge` leaves the
+  package's configuration in `/etc`. A reinstall restores the shipped defaults,
+  never the edits, so purging destroys whatever was changed. The dry run names
+  every package.
+- **Rotated logs over 30 days old** — `syslog.2.gz`, `dpkg.log-20250101.xz`,
+  `Xorg.0.log.old`. The command deletes exactly the files the dry run measured
+  rather than searching again, so logrotate running in between cannot change
+  what goes. The journal is left to its own bounded unit.
+
+`dpkg`-based systems only for the package half; the logs work anywhere.
+
 ### Model stores
 
 Tier 3 rather than tier 1, because "comes back" and "comes back for free" are
@@ -178,6 +208,12 @@ different claims: every file re-downloads, over hours, often metered. Pruning is
 separate and unflagged — `hf cache prune` discards only revisions nothing
 references and downloads that never finished, so it costs nothing and leaves
 working models alone.
+
+### Trash
+
+`--trash --allow-lossy`. Earlier versions emptied the trash by default as though
+it were a cache. It is the opposite of one: the trash exists so a deletion can be
+taken back, and emptying it removes that option.
 
 ### Crash artifacts
 

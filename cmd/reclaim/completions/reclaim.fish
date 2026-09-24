@@ -49,6 +49,8 @@ complete -c reclaim -n '__fish_seen_subcommand_from clean' -l kernels -d 'opt in
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l models -d 'opt in to model stores'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l xcode -d 'opt in to Xcode state'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l simulators -d 'opt in to simulator devices'
+complete -c reclaim -n '__fish_seen_subcommand_from clean' -l obsolete -d 'opt in to leftover config and old rotated logs'
+complete -c reclaim -n '__fish_seen_subcommand_from clean' -l trash -d 'opt in to emptying the trash'
 
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l min -r -d 'minimum size to report'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l installers -d 'also report stale downloads'

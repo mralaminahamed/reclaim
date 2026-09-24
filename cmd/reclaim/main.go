@@ -89,7 +89,8 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 // honoured, or honoured under a name nothing defines.
 var optInFlags = []string{"gradle", "maven", "jetbrains", "browsers", "playwright",
 	"docker", "docker-volumes", "claude-vm", "system", "claude-jobs", "claude-plugins",
-	"claude-history", "heavy", "flatpak", "kernels", "models", "xcode", "simulators"}
+	"claude-history", "heavy", "flatpak", "kernels", "models", "xcode", "simulators",
+	"obsolete", "trash"}
 
 func cmdClean(args []string) int {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
@@ -202,8 +203,9 @@ func cmdClean(args []string) int {
 	// --kernels lives in the system package but is not part of --system: that
 	// flag is documented as the apt cache, a bounded journal vacuum and old
 	// snap revisions, and growing it to include package removal would change
-	// what an existing command does.
-	if forced["--system"] || forced["--kernels"] {
+	// what an existing command does. --obsolete is separate for the same
+	// reason, and because everything behind it is lossy.
+	if forced["--system"] || forced["--kernels"] || forced["--obsolete"] {
 		system.Add(reg, system.DefaultEnv())
 	}
 	if *sitesIdle > 0 {

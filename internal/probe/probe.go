@@ -67,6 +67,7 @@ func measure(u *unit.Unit) {
 				u.Bytes += n
 			}
 		}
+		u.Bytes = max(u.Bytes-u.SizeKeep, 0)
 		u.Mount = fsutil.MountOf(mountHint(u))
 		return
 	}
