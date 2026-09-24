@@ -131,9 +131,9 @@ units additionally require `--allow-lossy`.
 |---|---|
 | `--system` | the package-manager cache, a bounded journal vacuum, old snap revisions, crash dumps |
 | `--kernels` | superseded kernel packages and what removed kernels left in `/lib/modules`, never the running one |
-| `--obsolete` | config left by removed-but-not-purged packages, rotated logs over 30 days old — lossy |
+| `--obsolete` | config left by removed-but-not-purged packages, rotated logs over 30 days old, directories of superseded JetBrains IDE versions |
 | `--trash` | the desktop trash — lossy |
-| `--models` | huggingface, torch, whisper and LM Studio model stores |
+| `--models` | huggingface, torch, whisper and LM Studio model stores, Chrome's on-device AI model |
 | `--flatpak` | unused runtimes, and each app's sandboxed cache |
 | `--docker`, `--docker-volumes` | Docker prune — volumes may hold databases |
 | `--gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` |
@@ -200,6 +200,12 @@ lossy, so it also needs `--allow-lossy`:
   what goes. The journal is left to its own bounded unit.
 
 `dpkg`-based systems only for the package half; the logs work anywhere.
+
+- **Superseded JetBrains versions.** Every IDE upgrade starts a new
+  `RustRover2025.3` directory and abandons `RustRover2025.2`. A version counts
+  only when a newer one of the same product sits beside it. Plugin and index
+  data is reversible; the old **settings** directory is lossy, since the
+  upgrade imported it once and only if asked.
 
 ### Model stores
 
