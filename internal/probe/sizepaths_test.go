@@ -55,3 +55,25 @@ func TestCommandUnitWithoutSizePathsStillReportsNothing(t *testing.T) {
 		t.Fatalf("bytes %d, want 0", u.Bytes)
 	}
 }
+
+// A bounded journal vacuum keeps its window, so it frees what is measured less
+// that window -- and nothing at all when the journal is already smaller.
+func TestSizeKeepIsSubtractedAndNeverGoesNegative(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "blob"), make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := unit.NewRegistry()
+	r.Add(&unit.Unit{ID: "part", Kind: unit.KindCmd, Command: "true",
+		SizePaths: []string{dir}, SizeKeep: 1024})
+	r.Add(&unit.Unit{ID: "under", Kind: unit.KindCmd, Command: "true",
+		SizePaths: []string{dir}, SizeKeep: 1 << 20})
+	All(r, 1)
+
+	if u, _ := r.Get("part"); u.Bytes != 3072 {
+		t.Errorf("part: bytes %d, want 3072", u.Bytes)
+	}
+	if u, _ := r.Get("under"); u.Bytes != 0 {
+		t.Errorf("under: bytes %d, want 0", u.Bytes)
+	}
+}

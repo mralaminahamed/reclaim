@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mralaminahamed/reclaim/internal/fsutil"
 	"github.com/mralaminahamed/reclaim/internal/unit"
 )
 
@@ -30,6 +31,14 @@ type Env struct {
 	// CrashDirs are the directories crash artifacts land in. Injected so the
 	// unit can be tested against a fixture rather than the real /var.
 	CrashDirs []string
+	// Residual lists packages removed but not purged. ModulesRoot and BootDir
+	// are where kernels keep their modules and images, and LogDir is where
+	// rotated logs accumulate. All injected so fixtures stand in for the
+	// real system directories.
+	Residual    func() []Residue
+	ModulesRoot string
+	BootDir     string
+	LogDir      string
 }
 
 // DefaultEnv returns an Env for this machine.
@@ -42,6 +51,10 @@ func DefaultEnv() Env {
 		KernelPackages: installedKernels,
 		RunningKernel:  runningKernel,
 		CrashDirs:      []string{"/var/crash", "/var/lib/systemd/coredump"},
+		Residual:       residualPackages,
+		ModulesRoot:    "/lib/modules",
+		BootDir:        "/boot",
+		LogDir:         "/var/log",
 	}
 }
 
@@ -71,8 +84,11 @@ func Add(r *unit.Registry, env Env) {
 	// honestly.
 	switch {
 	case env.Has("apt-get"):
+		// clean also drops the two binary package indexes, which apt rebuilds
+		// on its next run and which are often larger than the archive.
 		addCached("system-apt", "apt cache clean", "sudo apt-get clean",
-			"/var/cache/apt/archives")
+			"/var/cache/apt/archives", "/var/cache/apt/pkgcache.bin",
+			"/var/cache/apt/srcpkgcache.bin")
 	case env.Has("dnf"):
 		// dnf5 moved the cache; naming both costs nothing and PathBytes
 		// reports 0 for the one that is not there.
@@ -104,6 +120,13 @@ func Add(r *unit.Registry, env Env) {
 		// Bounded on purpose: an unbounded vacuum would drop the entire journal
 		// and with it the logs needed to explain a recent failure.
 		add("system-journal", "journal vacuum", "sudo journalctl --vacuum-size="+keep, unit.TierPkgCache)
+		// Measured as the journal less the window it keeps. The vacuum only
+		// removes archived files, so this is an upper bound -- but a close
+		// one, where 0B for a gigabyte of logs was not an answer at all.
+		if u, ok := r.Get("system-journal"); ok {
+			u.SizePaths = []string{"/var/log/journal", "/run/log/journal"}
+			u.SizeKeep, _ = fsutil.ParseSize(keep)
+		}
 	}
 	// Kernels get a unit of their own rather than a blanket autoremove. apt
 	// decides for itself what is orphaned, and that set is not something this
@@ -144,6 +167,7 @@ func Add(r *unit.Registry, env Env) {
 				" -exec rm -rf {} +",
 		})
 	}
+	addObsolete(r, env)
 	if env.Has("snap") {
 		// "|| exit 1" matters: a while loop is the last stage of this pipeline
 		// and exits 0 even when every removal inside it failed, which made a
