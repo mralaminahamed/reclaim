@@ -9,6 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/mralaminahamed/reclaim/internal/unit"
 )
@@ -74,7 +78,13 @@ func Build(env Env) *unit.Registry {
 	b.paths("npm-logs", "npm _logs", unit.TierPkgCache, true, "", ".npm/_logs")
 	b.paths("yarn-classic", "yarn (classic)", unit.TierPkgCache, true, "",
 		".cache/yarn", "Library/Caches/Yarn")
-	b.paths("yarn-berry", "yarn berry cache", unit.TierPkgCache, true, "", ".yarn/berry/cache")
+	// metadata is the registry metadata berry caches per package; it refetches.
+	// index is left alone: it maps the global cache and is small.
+	b.paths("yarn-berry", "yarn berry cache", unit.TierPkgCache, true, "",
+		".yarn/berry/cache", ".yarn/berry/metadata")
+	// Downloaded core, plugin and theme zips. packages/ is left alone: those
+	// are installed wp-cli commands, not downloads.
+	b.paths("wp-cli-cache", "wp-cli cache", unit.TierPkgCache, true, "", ".wp-cli/cache")
 	b.paths("pnpm-cache", "pnpm cache", unit.TierPkgCache, true, "",
 		".cache/pnpm", "Library/Caches/pnpm")
 	b.paths("pnpm-store", "pnpm store", unit.TierPkgCache, true, "", ".local/share/pnpm/store")
@@ -125,6 +135,11 @@ func Build(env Env) *unit.Registry {
 		".cache/whisper")
 	b.paths("lmstudio-models", "LM Studio models", unit.TierColdReload, true, "--models",
 		".lmstudio/models")
+	// Chrome's on-device model lives in the profile, not the cache, and runs
+	// to several gigabytes. Chrome fetches it again when a feature needs it.
+	b.paths("chrome-ai-model", "Chrome on-device AI model", unit.TierColdReload, true, "--models",
+		".config/google-chrome/OptGuideOnDeviceModel",
+		".config/google-chrome/optimization_guide_model_store")
 
 	// macOS. Registered from this same table rather than a platform file: the
 	// paths simply do not exist on Linux, so nothing registers there, and the
@@ -169,6 +184,7 @@ func Build(env Env) *unit.Registry {
 		".cache/ms-playwright", "Library/Caches/ms-playwright")
 
 	// Tier 3: costs a reindex or a full cold re-download on next use.
+	b.jetbrainsOld()
 	b.paths("jetbrains-cache", "JetBrains caches", unit.TierColdReload, true, "--jetbrains",
 		".cache/JetBrains", "Library/Caches/JetBrains")
 	b.paths("gradle-caches", "gradle caches", unit.TierColdReload, true, "--gradle", ".gradle/caches")
@@ -285,4 +301,69 @@ func (b *builder) paths(id, label string, tier unit.Tier, reversible bool, flag 
 	}
 	b.r.Add(&unit.Unit{ID: id, Tier: tier, Reversible: reversible, Label: label,
 		Kind: unit.KindPaths, Paths: present, Flag: flag, MountHint: b.env.Home})
+}
+
+// jetbrainsVersion matches a per-version directory: "RustRover2025.3".
+var jetbrainsVersion = regexp.MustCompile(`^([A-Za-z]+)(\d{4})\.(\d+)$`)
+
+// jetbrainsOld registers the directories earlier IDE versions left behind.
+// Every upgrade starts a new versioned directory and abandons the last one; a
+// version is obsolete only when a newer one of the same product sits beside
+// it. The newest of each product is the one in use and is never touched.
+//
+// Data (plugins and indexes in ~/.local/share) re-downloads or rebuilds, so it
+// is reversible. Settings are not: an upgrade imports them once, if asked, and
+// the old directory is the only copy of anything that was not.
+// ~/.cache/JetBrains is not scanned: jetbrains-cache already owns it whole.
+func (b *builder) jetbrainsOld() {
+	data := oldVersions(filepath.Join(b.env.Home, ".local/share/JetBrains"))
+	conf := oldVersions(filepath.Join(b.env.Home, ".config/JetBrains"))
+	if len(data) > 0 {
+		b.r.Add(&unit.Unit{ID: "jetbrains-old-data", Tier: unit.TierColdReload,
+			Reversible: true, Label: "old JetBrains version data", Kind: unit.KindPaths,
+			Paths: data, Flag: "--obsolete", MountHint: b.env.Home})
+	}
+	if len(conf) > 0 {
+		b.r.Add(&unit.Unit{ID: "jetbrains-old-config", Tier: unit.TierLossy,
+			Reversible: false, Label: "old JetBrains version settings", Kind: unit.KindPaths,
+			Paths: conf, Flag: "--obsolete", MountHint: b.env.Home})
+	}
+}
+
+// oldVersions lists every versioned directory in root that has a newer
+// version of the same product beside it.
+func oldVersions(root string) []string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	type ver struct {
+		dir         string
+		year, minor int
+	}
+	byProduct := map[string][]ver{}
+	for _, e := range entries {
+		m := jetbrainsVersion.FindStringSubmatch(e.Name())
+		if m == nil || !e.IsDir() {
+			continue
+		}
+		y, _ := strconv.Atoi(m[2])
+		n, _ := strconv.Atoi(m[3])
+		p := strings.ToLower(m[1])
+		byProduct[p] = append(byProduct[p], ver{filepath.Join(root, e.Name()), y, n})
+	}
+	var out []string
+	for _, vs := range byProduct {
+		sort.Slice(vs, func(i, j int) bool {
+			if vs[i].year != vs[j].year {
+				return vs[i].year > vs[j].year
+			}
+			return vs[i].minor > vs[j].minor
+		})
+		for _, v := range vs[1:] {
+			out = append(out, v.dir)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
