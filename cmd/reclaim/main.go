@@ -45,6 +45,8 @@ COMMANDS
   status     show filesystems and disk pressure
   analyze    list the largest directories, deleting nothing
   history    show what past runs deleted
+  index      snapshot where the space is, for instant analyze; also
+             "index show [DIR]" and "index cold [DIR]"
   version    print the version
   completion print a shell completion script
 
@@ -69,6 +71,8 @@ func main() {
 		os.Exit(cmdAnalyze(os.Args[2:]))
 	case "history":
 		os.Exit(cmdHistory(os.Args[2:]))
+	case "index":
+		os.Exit(cmdIndex(os.Args[2:]))
 	case "completion":
 		os.Exit(cmdCompletion(os.Args[2:]))
 	case "__units":
@@ -406,8 +410,17 @@ func cmdAnalyze(args []string) int {
 		return 2
 	}
 	home, _ := os.UserHomeDir()
-	heavy := discover.Heavyweights([]string{home}, n)
-	sum := report.Summary{Heavy: heavy, DryRun: true}
+	// A fresh index answers in milliseconds what a walk of the home directory
+	// takes minutes to. Stale or missing, walk: an old snapshot is not an
+	// answer about today's disk.
+	sum := report.Summary{DryRun: true}
+	if heavy, age, ok := heavyFromIndex(home, n); ok {
+		sum.Heavy = heavy
+		sum.HeavyFrom = fmt.Sprintf("from the index, built %s ago; run \"reclaim index\" to refresh",
+			age.Round(time.Minute))
+	} else {
+		sum.Heavy = discover.Heavyweights([]string{home}, n)
+	}
 	if *stale {
 		// ~/Downloads holds user files, not cache. This reports and never
 		// removes, which is why it lives in analyze rather than as a unit.
