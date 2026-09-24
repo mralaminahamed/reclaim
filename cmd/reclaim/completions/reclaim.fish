@@ -37,6 +37,7 @@ complete -c reclaim -n '__fish_seen_subcommand_from clean' -l jetbrains -d 'opt 
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l browsers -d 'opt in to browser units'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l playwright -d 'opt in to playwright units'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l docker -d 'opt in to docker units'
+complete -c reclaim -n '__fish_seen_subcommand_from clean' -l docker-containers -d 'opt in to removing stopped docker containers'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l docker-volumes -d 'opt in to docker volumes'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l claude-vm -d 'opt in to Claude VM units'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l system -d 'opt in to system units'

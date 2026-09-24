@@ -25,7 +25,10 @@ func cmdIndex(args []string) int {
 	if len(args) > 0 && (args[0] == "show" || args[0] == "cold" || args[0] == "build") {
 		sub, args = args[0], args[1:]
 	}
-	home, _ := os.UserHomeDir()
+	// Under sudo the index still belongs to the user who asked: root can read
+	// every directory, but analyze runs as the user and looks in their home.
+	who := invokingOwner()
+	home := who.home
 	path := index.DefaultPath(home)
 	switch sub {
 	case "show":
@@ -33,10 +36,10 @@ func cmdIndex(args []string) int {
 	case "cold":
 		return indexCold(path, home, args)
 	}
-	return indexBuild(path, home, args)
+	return indexBuild(path, who, args)
 }
 
-func indexBuild(path, home string, args []string) int {
+func indexBuild(path string, who owner, args []string) int {
 	fs := flag.NewFlagSet("index", flag.ContinueOnError)
 	full := fs.Bool("full", false, "re-read every directory instead of only changed ones")
 	workers := fs.Int("workers", runtime.NumCPU()*2, "parallel walkers")
@@ -83,6 +86,10 @@ func indexBuild(path, home string, args []string) int {
 	}
 	if err := x.Save(path); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := who.handBack(path); err != nil {
+		fmt.Fprintln(os.Stderr, "index written but not handed back:", err)
 		return 1
 	}
 	fmt.Println("index written to", path)
