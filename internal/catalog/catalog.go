@@ -145,6 +145,17 @@ func Build(env Env) *unit.Registry {
 		".config/google-chrome/OptGuideOnDeviceModel",
 		".config/google-chrome/optimization_guide_model_store")
 
+	// Compiled GPU shader binaries, one directory per game. A driver or Steam
+	// update invalidates them anyway, and the game recompiles on next launch
+	// with no re-download involved -- the same "regenerable, no data at risk"
+	// claim as xcode-cache below, just cross-platform.
+	b.paths("steam-shadercache", "Steam shader cache", unit.TierArtifact, true, "",
+		".local/share/Steam/steamapps/shadercache",
+		".steam/steam/steamapps/shadercache",
+		".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache",
+		"Library/Application Support/Steam/steamapps/shadercache")
+	b.steamCompatData()
+
 	// macOS. Registered from this same table rather than a platform file: the
 	// paths simply do not exist on Linux, so nothing registers there, and the
 	// tier and reversibility decisions -- the part that matters -- are written

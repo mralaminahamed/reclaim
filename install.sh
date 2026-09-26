@@ -42,10 +42,18 @@ detect_arch() {
     esac
 }
 
+detect_os() {
+    case "$(uname -s)" in
+        Darwin) echo darwin ;;
+        *)      echo linux ;;
+    esac
+}
+
 # The package format a machine expects, not the distribution's name. Deriving
 # from the tool that is present is what makes this work on the derivatives too,
 # and there are far more of those than there are upstreams.
 detect_format() {
+    [ "$OS" = darwin ] && { echo none; return; }
     if have dpkg-deb || have apt-get; then echo deb
     elif have rpm || have dnf || have yum || have zypper; then echo rpm
     else echo none
@@ -79,6 +87,7 @@ verify() {
 }
 
 TMP=$(mktemp -d)
+OS=$(detect_os)
 ARCH=$(detect_arch)
 VERSION=${RECLAIM_VERSION:-}
 [ -n "$VERSION" ] || VERSION=$(latest_version)
@@ -111,13 +120,15 @@ case "$FORMAT" in
         fi
         ;;
     *)
-        TARBALL="reclaim_${VERSION}_linux_${ARCH}.tar.gz"
+        TARBALL="reclaim_${VERSION}_${OS}_${ARCH}.tar.gz"
         echo "installing reclaim $VERSION to $BINDIR"
         fetch "https://github.com/$REPO/releases/download/v$VERSION/$TARBALL" "$TMP/$TARBALL" \
-            || die "no build published for linux/$ARCH at v$VERSION"
+            || die "no build published for $OS/$ARCH at v$VERSION"
         verify "$TMP/$TARBALL"
         tar -C "$TMP" -xzf "$TMP/$TARBALL"
-        as_root install -Dm0755 "$TMP/reclaim" "$BINDIR/reclaim"
+        # BSD install (macOS) has no -D.
+        as_root mkdir -p "$BINDIR"
+        as_root install -m0755 "$TMP/reclaim" "$BINDIR/reclaim"
         ;;
 esac
 

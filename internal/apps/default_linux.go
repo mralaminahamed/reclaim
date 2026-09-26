@@ -16,6 +16,12 @@ import (
 	"github.com/mralaminahamed/reclaim/internal/fsutil"
 )
 
+// FindIdle reports applications idle for at least idle, from this machine's
+// .desktop launchers.
+func FindIdle(home string, idle time.Duration) Result {
+	return Find(DefaultEnv(home), idle)
+}
+
 // DefaultEnv returns an Env for this machine.
 func DefaultEnv(home string) Env {
 	owners := dpkgOwners()

@@ -7,8 +7,8 @@
 **Reclaim disk space without losing anything you cannot get back.**
 
 [![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8.svg?logo=go&logoColor=white)](https://go.dev/)
-[![Platform](https://img.shields.io/badge/Platform-Linux-FCC624.svg?logo=linux&logoColor=black)](#status)
-[![Distros](https://img.shields.io/badge/distros-deb%20%7C%20rpm%20%7C%20arch%20%7C%20alpine-4C1.svg)](#install)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-4C1.svg)](#status)
+[![Distros](https://img.shields.io/badge/distros-deb%20%7C%20rpm%20%7C%20arch%20%7C%20alpine%20%7C%20brew-4C1.svg)](#install)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-4C1.svg)](go.mod)
 [![Tests](https://img.shields.io/badge/tests-286-4C1.svg)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -56,9 +56,16 @@ curl -fsSL https://raw.githubusercontent.com/mralaminahamed/reclaim/trunk/instal
 The script installs a **native package** where one fits the machine — `.deb` on
 Debian and its derivatives, `.rpm` on Fedora, RHEL and openSUSE — so `reclaim`
 can be upgraded and removed by the tools that already manage everything else
-there. Anywhere else it falls back to a static binary in `/usr/local/bin`.
-Checksums are verified, and a missing checksum file is a failure rather than a
-shrug.
+there. Anywhere else, including macOS, it falls back to a static binary in
+`/usr/local/bin`. Checksums are verified, and a missing checksum file is a
+failure rather than a shrug.
+
+On macOS, Homebrew is the native path instead:
+
+```bash
+brew tap mralaminahamed/reclaim https://github.com/mralaminahamed/reclaim
+brew install --cask reclaim
+```
 
 It selects on the *package format the machine expects*, not the distribution's
 name. That is what makes it work on the derivatives too, and there are far more
@@ -73,7 +80,8 @@ sudo dnf install reclaim-0.2.0-1.x86_64.rpm     # Fedora, RHEL, Rocky, Alma
 sudo zypper install reclaim-0.2.0-1.x86_64.rpm  # openSUSE
 ```
 
-Arch has a [PKGBUILD](packaging/PKGBUILD). With Go already installed,
+Arch has a [PKGBUILD](packaging/PKGBUILD), macOS a [Cask](Casks/reclaim.rb).
+With Go already installed,
 `go install github.com/mralaminahamed/reclaim/cmd/reclaim@latest`. From a
 checkout, `make build` — or `make dist deb rpm` to produce the packages
 yourself.
@@ -138,6 +146,7 @@ units additionally require `--allow-lossy`.
 | `--docker` | build cache, dangling images, unused networks |
 | `--docker-containers` | stopped containers, each named in the dry run — a stopped container can hold state nowhere else |
 | `--docker-volumes` | unused volumes — these may hold databases |
+| `--steam-compatdata` | Steam's Proton prefixes, each named by game in the dry run — lossy: some games keep saves or settings there and nowhere else |
 | `--gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` |
 | `--maven` | `~/.m2/repository` |
 | `--jetbrains` | JetBrains IDE caches |
@@ -289,6 +298,13 @@ A deb package is skipped when it was installed as a dependency, or when another
 installed package depends on or recommends it — removing `ibus` removes
 `ubuntu-desktop`, and the next autoremove takes everything that was holding.
 Apps unpacked into `/opt` are sized as their directory.
+
+On macOS there are no `.desktop` launchers, so this scans `/Applications` and
+`~/Applications` directly, and the evidence is `kMDItemLastUsedDate` — the same
+Spotlight record Launchpad sorts "recently used" by. An app Spotlight has no
+launch record for is not judged, same as a binary on a `noatime` mount. The
+removal command is `brew uninstall --cask <token>` for anything Homebrew owns,
+or `rm -rf` for a plain drag-installed `.app`.
 
 ### Stale installers
 
@@ -506,13 +522,22 @@ python3 assets/generate.py && bash assets/render.sh
 ## Status
 
 Linux, on every distribution CI can reach: Debian, Ubuntu, Fedora, Arch,
-openSUSE and Alpine. macOS support is planned and tracked in
-[#1](https://github.com/mralaminahamed/reclaim/issues/1).
+openSUSE and Alpine.
 
-Note that `GOOS=darwin go build` currently *succeeds*, which is misleading: the
-process table reader returns nothing on macOS, so every unit would look
-unlocked. That is [#2](https://github.com/mralaminahamed/reclaim/issues/2) and
-it blocks everything else — it is a safety regression, not a missing feature.
+macOS has its own CI job building, testing and running the real binary on
+`macos-latest`, and by now covers mount enumeration and disk pressure,
+process-based lock detection (so a live app's cache is still parked, not just
+reported as free), the cache catalog, unused-application detection, and a
+Homebrew Cask. Tracked in the [#1](https://github.com/mralaminahamed/reclaim/issues/1)
+umbrella, what is still missing there:
+
+- `--system` has no macOS unit behind it yet — cleaning `apt`/`dnf`'s cache
+  does not translate, and Time Machine local snapshots and the unified log are
+  the platform's actual analogues
+  ([#4](https://github.com/mralaminahamed/reclaim/issues/4),
+  [#41](https://github.com/mralaminahamed/reclaim/issues/41))
+- signed, notarized release builds and an `.icns` icon
+  ([#5](https://github.com/mralaminahamed/reclaim/issues/5))
 
 This began as a single self-contained bash script that reached 1615 lines and
 201 built-in assertions. It is preserved in git history:

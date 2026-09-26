@@ -19,7 +19,7 @@ _reclaim() {
         'completion:print a shell completion script'
     )
     groups=(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes
-            claude-vm system claude-jobs claude-plugins claude-history
+            steam-compatdata claude-vm system claude-jobs claude-plugins claude-history
             heavy flatpak kernels models xcode simulators obsolete trash)
     clean_flags=(
         '--apply[actually delete]'
@@ -36,7 +36,7 @@ _reclaim() {
         '--sites-root[where projects live]:directory:_files -/'
         '--only[restrict to these unit ids]:unit:_reclaim_units'
         '--exclude[drop these unit ids]:unit:_reclaim_units'
-        '--with[opt-in flag by name]:group:(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash)'
+        '--with[opt-in flag by name]:group:(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes steam-compatdata claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash)'
         '--gradle[opt in to gradle units]'
         '--maven[opt in to maven units]'
         '--jetbrains[opt in to jetbrains units]'
@@ -45,6 +45,7 @@ _reclaim() {
         '--docker[opt in to docker units]'
         '--docker-containers[opt in to removing stopped docker containers]'
         '--docker-volumes[opt in to docker volume units]'
+        '--steam-compatdata[opt in to Steam Proton prefixes]'
         '--claude-vm[opt in to Claude VM units]'
         '--system[opt in to system units]'
         '--claude-jobs[opt in to Claude job units]'

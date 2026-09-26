@@ -95,7 +95,7 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 var optInFlags = []string{"gradle", "maven", "jetbrains", "browsers", "playwright",
 	"docker", "docker-containers", "docker-volumes", "claude-vm", "system", "claude-jobs", "claude-plugins",
 	"claude-history", "heavy", "flatpak", "kernels", "models", "xcode", "simulators",
-	"obsolete", "trash"}
+	"obsolete", "trash", "steam-compatdata"}
 
 func cmdClean(args []string) int {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
@@ -435,7 +435,7 @@ func cmdAnalyze(args []string) int {
 		// Uninstalling is not cleaning: an app does not come back by itself,
 		// and neither does what it kept. Reported with its removal command,
 		// never acted on.
-		res := apps.Find(apps.DefaultEnv(home), time.Duration(*idle)*24*time.Hour)
+		res := apps.FindIdle(home, time.Duration(*idle)*24*time.Hour)
 		sum.Apps, sum.AppsUnknown, sum.AppsNeeded = res.Apps, res.Unknown, res.Needed
 		sum.AppsIdleDays = *idle
 	}

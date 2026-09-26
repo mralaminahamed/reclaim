@@ -65,6 +65,30 @@ func TestGradleAndMavenAreColdReloadAndOptIn(t *testing.T) {
 	}
 }
 
+func TestSteamShaderCacheIsFoundUnderEveryInstallMethod(t *testing.T) {
+	home := t.TempDir()
+	mkdir(t, filepath.Join(home, ".local/share/Steam/steamapps/shadercache"))
+	mkdir(t, filepath.Join(home, ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache"))
+	r := Build(Env{Home: home, Has: func(string) bool { return false }})
+
+	u, ok := r.Get("steam-shadercache")
+	if !ok {
+		t.Fatal("steam-shadercache not registered though its paths exist")
+	}
+	if u.Tier != unit.TierArtifact {
+		t.Errorf("tier = %v, want TierArtifact", u.Tier)
+	}
+	if !u.Reversible {
+		t.Error("shader cache should be reversible: the game recompiles it")
+	}
+	if u.Flag != "" {
+		t.Errorf("flag = %q, want unflagged", u.Flag)
+	}
+	if len(u.Paths) != 2 {
+		t.Errorf("paths = %v, want exactly the two that exist", u.Paths)
+	}
+}
+
 func TestLossyUnitsAreMarkedIrreversible(t *testing.T) {
 	home := t.TempDir()
 	mkdir(t, filepath.Join(home, ".config/Claude/vm_bundles"))
