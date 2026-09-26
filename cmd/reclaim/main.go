@@ -95,7 +95,7 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 var optInFlags = []string{"gradle", "maven", "jetbrains", "browsers", "playwright",
 	"docker", "docker-containers", "docker-volumes", "claude-vm", "system", "claude-jobs", "claude-plugins",
 	"claude-history", "heavy", "flatpak", "kernels", "models", "xcode", "simulators",
-	"obsolete", "trash", "steam-compatdata"}
+	"obsolete", "trash", "steam-compatdata", "timemachine"}
 
 func cmdClean(args []string) int {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)

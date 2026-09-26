@@ -120,6 +120,9 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, error) {
 		if run == nil {
 			run = shellRun
 		}
+		if u.MeasureFreed {
+			return r.runMeasured(u, run)
+		}
 		if err := run(u.Command); err != nil {
 			return 0, nil, err
 		}
@@ -155,6 +158,32 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, error) {
 		}
 	}
 	return freed, removed, nil
+}
+
+// runMeasured runs a command whose yield cannot be known from anything on
+// disk, and reports what actually freed rather than an estimate: free space on
+// the unit's mount, before and after. A command that fails partway can still
+// have freed something, so the delta is measured either way and only the
+// error is what makes the run count as failed.
+func (r *Runner) runMeasured(u *unit.Unit, run func(string) error) (int64, []string, error) {
+	avail := r.Avail
+	if avail == nil {
+		avail = fsutil.AvailBytes
+	}
+	mount := u.MountHint
+	if mount == "" {
+		mount = "/"
+	}
+	before, _ := avail(mount)
+	err := run(u.Command)
+	after, availErr := avail(mount)
+	if err != nil {
+		return 0, nil, err
+	}
+	if availErr != nil {
+		return u.Bytes, nil, nil
+	}
+	return max(after-before, 0), nil, nil
 }
 
 // protected are paths that no unit may ever delete, whatever it claims. This is

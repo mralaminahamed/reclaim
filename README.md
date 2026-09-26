@@ -91,6 +91,13 @@ empty `require` block is a feature rather than an accident. The published
 binaries are static for the same reason: this runs on a machine that is having a
 bad day, and a dynamic link to a libc on the same failing disk is a bad bet.
 
+The macOS binaries are not (yet) notarised — that needs an Apple Developer
+account, which this project does not have. `install.sh` and the Cask both fetch
+with `curl`, which never sets the quarantine flag, so neither is affected. Only
+a binary pulled through a browser is: `xattr -d com.apple.quarantine reclaim`
+clears it, the same workaround the release notes point at until notarising
+becomes worth the cost for a tool this size.
+
 ## Usage
 
 <div align="center">
@@ -147,6 +154,7 @@ units additionally require `--allow-lossy`.
 | `--docker-containers` | stopped containers, each named in the dry run — a stopped container can hold state nowhere else |
 | `--docker-volumes` | unused volumes — these may hold databases |
 | `--steam-compatdata` | Steam's Proton prefixes, each named by game in the dry run — lossy: some games keep saves or settings there and nowhere else |
+| `--timemachine` | macOS: thins Time Machine's local snapshots — lossy: a local snapshot is the only copy of the state it captured |
 | `--gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` |
 | `--maven` | `~/.m2/repository` |
 | `--jetbrains` | JetBrains IDE caches |
@@ -195,6 +203,27 @@ package in the `rc` state. `--kernels` takes both, but only for a version
 nothing still claims: no installed package of that version, not the running
 kernel, and no image in `/boot`. The last check protects a kernel installed
 outside dpkg, which has modules and an image and no package at all.
+
+### Time Machine and the unified log
+
+macOS has no package manager cache for `--system` to clean, so it covers two
+things there instead, gated on `tmutil` being present rather than on the
+platform name.
+
+**The unified log** (`--system`) is the journal's analogue. `log erase --ttl`
+takes only entries macOS itself already marked expired, the same reason a
+7-day-old crash dump is reversible: the bound is what the system already
+committed to, not one this tool invented.
+
+**Time Machine local snapshots** (`--timemachine`, its own flag for the reason
+kernels get one) are the high-value target — tens of gigabytes are routine even
+with no backup disk ever attached. `tmutil thinlocalsnapshots` asks the system
+to free space and decides for itself which snapshots to drop, so nothing on
+disk can state the yield in advance; the dry run instead names how many local
+snapshots currently exist, and `--apply` reports what actually freed, measured
+from free space before and after rather than estimated. **Must be lossy** — a
+local snapshot is the only copy of the state it captured — so it also needs
+`--allow-lossy`.
 
 ### Obsolete files
 
@@ -527,17 +556,15 @@ openSUSE and Alpine.
 macOS has its own CI job building, testing and running the real binary on
 `macos-latest`, and by now covers mount enumeration and disk pressure,
 process-based lock detection (so a live app's cache is still parked, not just
-reported as free), the cache catalog, unused-application detection, and a
-Homebrew Cask. Tracked in the [#1](https://github.com/mralaminahamed/reclaim/issues/1)
-umbrella, what is still missing there:
-
-- `--system` has no macOS unit behind it yet — cleaning `apt`/`dnf`'s cache
-  does not translate, and Time Machine local snapshots and the unified log are
-  the platform's actual analogues
-  ([#4](https://github.com/mralaminahamed/reclaim/issues/4),
-  [#41](https://github.com/mralaminahamed/reclaim/issues/41))
-- signed, notarized release builds and an `.icns` icon
-  ([#5](https://github.com/mralaminahamed/reclaim/issues/5))
+reported as free), the cache catalog, unused-application detection, `--system`'s
+platform analogues (the unified log and Time Machine local snapshots), release
+binaries, an `.icns` icon and a Homebrew Cask
+([#4](https://github.com/mralaminahamed/reclaim/issues/4),
+[#41](https://github.com/mralaminahamed/reclaim/issues/41) closed;
+[#5](https://github.com/mralaminahamed/reclaim/issues/5) mostly closed —
+notarising is still open, and needs an Apple Developer account this project
+does not have). Tracked in the
+[#1](https://github.com/mralaminahamed/reclaim/issues/1) umbrella.
 
 This began as a single self-contained bash script that reached 1615 lines and
 201 built-in assertions. It is preserved in git history:

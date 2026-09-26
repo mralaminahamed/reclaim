@@ -39,6 +39,11 @@ type Env struct {
 	ModulesRoot string
 	BootDir     string
 	LogDir      string
+	// LocalSnapshots lists local Time Machine snapshot names on the boot
+	// volume. Thinning is not told what it will remove, so this is what a
+	// dry run can actually name -- injected for the same reason KernelPackages
+	// is: a fixture stands in for a machine's real snapshot history.
+	LocalSnapshots func() []string
 }
 
 // DefaultEnv returns an Env for this machine.
@@ -55,6 +60,7 @@ func DefaultEnv() Env {
 		ModulesRoot:    "/lib/modules",
 		BootDir:        "/boot",
 		LogDir:         "/var/log",
+		LocalSnapshots: localSnapshots,
 	}
 }
 
@@ -177,6 +183,66 @@ func Add(r *unit.Registry, env Env) {
 				`while read -r sn rev; do sudo snap remove "$sn" --revision="$rev" || exit 1; done`,
 			unit.TierPkgCache)
 	}
+
+	// macOS. Gated on tmutil rather than on GOOS: it is a real binary nothing
+	// else ships, so the gate is exact rather than assumed. --system finds
+	// nothing at all here otherwise, which is what left this whole block out
+	// of the first macOS pass.
+	if env.Has("tmutil") {
+		// log erase --ttl only takes data the system already marked expired --
+		// bounded by macOS itself the way the crash-dump age bound is bounded
+		// by this tool, which is what makes Reversible defensible here too.
+		if env.Has("log") {
+			addCached("system-unified-log", "unified log (expired entries)",
+				"sudo log erase --ttl", "/var/db/diagnostics")
+		}
+
+		// Thinning asks the system to free space and lets it choose which
+		// snapshots to drop; nothing on disk names the answer in advance, so
+		// Bytes is left at zero and MeasureFreed reports the real delta once
+		// --apply has actually run it. Must be lossy: a local snapshot is the
+		// only copy of the state it captured.
+		r.Add(&unit.Unit{
+			ID: "system-tm-thin", Tier: unit.TierIrreplaceable, Reversible: false,
+			Label: "Time Machine local snapshots", Kind: unit.KindCmd,
+			Command: "sudo tmutil thinlocalsnapshots /", Flag: "--timemachine",
+			MountHint: "/", NeedsRoot: true, MeasureFreed: true,
+			Detail: snapshotDetail(env.LocalSnapshots),
+		})
+	}
+}
+
+// snapshotDetail describes what a Time Machine thinning unit holds, for a
+// person deciding whether to run it: a byte count is not available before it
+// runs, so the count of snapshots currently held is what there is to go on.
+func snapshotDetail(list func() []string) []string {
+	if list == nil {
+		return nil
+	}
+	names := list()
+	if len(names) == 0 {
+		return []string{"no local snapshots currently held; thinning may free nothing"}
+	}
+	return []string{strconv.Itoa(len(names)) +
+		" local snapshot(s) currently held; exact bytes are not known until thinning runs"}
+}
+
+// localSnapshots lists this machine's local Time Machine snapshots on the
+// boot volume, one name per line as tmutil reports them.
+func localSnapshots() []string {
+	out, err := exec.Command("tmutil", "listlocalsnapshots", "/").Output()
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasSuffix(line, ":") {
+			continue
+		}
+		names = append(names, line)
+	}
+	return names
 }
 
 // crashAge is how long a crash artifact is left alone. Long enough that an
