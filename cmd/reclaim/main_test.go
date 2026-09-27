@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mralaminahamed/reclaim/internal/discover"
+	"github.com/mralaminahamed/reclaim/internal/testharness"
 )
 
 var bin string
@@ -48,10 +49,25 @@ func fixtureHome(t *testing.T) string {
 	return home
 }
 
+// oplogEnv is the sealed environment with the operations log switched on,
+// for the tests that are about the log.
+func oplogEnv(t *testing.T, home string) []string {
+	t.Helper()
+	var env []string
+	for _, kv := range testharness.SealedEnv(home, testharness.StubDir(t), t.TempDir()) {
+		if !strings.HasPrefix(kv, "RECLAIM_NO_OPLOG=") {
+			env = append(env, kv)
+		}
+	}
+	return env
+}
+
 func run(t *testing.T, home string, args ...string) (string, int) {
 	t.Helper()
 	cmd := exec.Command(bin, args...)
-	cmd.Env = append(os.Environ(), "HOME="+home, "RECLAIM_NO_OPLOG=1")
+	// Built from nothing: the binary must not see the developer's PATH or any
+	// cache-location variable. See TestTestsCannotReachRealCaches.
+	cmd.Env = testharness.SealedEnv(home, testharness.StubDir(t), t.TempDir())
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
@@ -604,13 +620,13 @@ func TestBadBelowSizeExitsNonZero(t *testing.T) {
 func TestHistoryShowsWhatWasRemoved(t *testing.T) {
 	home := fixtureHome(t)
 	cmd := exec.Command(bin, "clean", "--only", "pip-cache", "--apply", "--yes")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = oplogEnv(t, home)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("clean failed: %v\n%s", err, out)
 	}
 
 	cmd = exec.Command(bin, "history")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = oplogEnv(t, home)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("history failed: %v\n%s", err, out)
@@ -627,13 +643,13 @@ func TestHistoryShowsWhatWasRemoved(t *testing.T) {
 func TestHistoryRecordsNothingForADryRun(t *testing.T) {
 	home := fixtureHome(t)
 	cmd := exec.Command(bin, "clean", "--only", "pip-cache")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = oplogEnv(t, home)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("clean failed: %v\n%s", err, out)
 	}
 
 	cmd = exec.Command(bin, "history")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = oplogEnv(t, home)
 	out, _ := cmd.CombinedOutput()
 
 	if !strings.Contains(string(out), "no recorded runs") {
