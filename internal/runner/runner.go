@@ -150,7 +150,7 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, error) {
 				freed += n
 				continue
 			}
-			if err := os.RemoveAll(t); err != nil {
+			if err := removeAll(t); err != nil {
 				return freed, removed, err
 			}
 			freed += n
