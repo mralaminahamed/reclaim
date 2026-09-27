@@ -6,7 +6,6 @@ package fsutil
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -59,46 +58,20 @@ func Human(n int64) string {
 	return fmt.Sprintf("%.1f%ciB", float64(n)/float64(div), "KMGTP"[exp])
 }
 
-// PathBytes sums the apparent size of everything under path.
+// PathBytes reports the space deleting path would give back: allocated
+// blocks, not file lengths, with hard-linked files credited only when all
+// their links are under path. See Measure.
 //
 // A missing path is not an error: units routinely list paths for tools that are
 // not installed on this machine, and those simply contribute nothing.
-// Symlinks are counted as links, never followed, so a link cannot drag the
-// measurement out of the tree being examined.
 func PathBytes(path string) (int64, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
+	if _, err := os.Lstat(path); err != nil {
 		if os.IsNotExist(err) {
 			return 0, nil
 		}
 		return 0, err
 	}
-	if !info.IsDir() {
-		return info.Size(), nil
-	}
-
-	var total int64
-	err = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			// Unreadable subtrees are skipped rather than failing the probe:
-			// a root-owned directory inside a user cache is common and must
-			// not abort the whole run.
-			return nil //nolint:nilerr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		fi, err := d.Info()
-		if err != nil {
-			return nil //nolint:nilerr
-		}
-		total += fi.Size()
-		return nil
-	})
-	if err != nil {
-		return total, err
-	}
-	return total, nil
+	return Measure([]string{path}).Allocated, nil
 }
 
 // AvailBytes reports free space on the filesystem holding path, measured as

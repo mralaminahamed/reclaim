@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -64,10 +65,16 @@ func oplogEnv(t *testing.T, home string) []string {
 
 func run(t *testing.T, home string, args ...string) (string, int) {
 	t.Helper()
+	return runWith(t, home, nil, args...)
+}
+
+// runWith is run with extra environment entries appended to the sealed set.
+func runWith(t *testing.T, home string, extra []string, args ...string) (string, int) {
+	t.Helper()
 	cmd := exec.Command(bin, args...)
 	// Built from nothing: the binary must not see the developer's PATH or any
 	// cache-location variable. See TestTestsCannotReachRealCaches.
-	cmd.Env = testharness.SealedEnv(home, testharness.StubDir(t), t.TempDir())
+	cmd.Env = append(testharness.SealedEnv(home, testharness.StubDir(t), t.TempDir()), extra...)
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
@@ -214,23 +221,26 @@ func planned(t *testing.T, out string) []string {
 	return ids
 }
 
-// hugeCache creates a directory under ~/.cache whose apparent size is 2GiB.
-// The file is sparse, so it costs no disk: the probe sums stat sizes, which is
-// exactly what the promotion pass reads.
+// hugeCache creates a discovered cache that is "huge" relative to the lowered
+// threshold runHeavy sets: 2MiB of real, allocated data against 1MiB. A sparse
+// file used to stand in for 2GiB, but a sparse file frees nothing, and the
+// probe now measures what deleting would actually give back.
 func hugeCache(t *testing.T, home, name string) {
 	t.Helper()
 	dir := filepath.Join(discover.CacheRoot(home), name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.Create(filepath.Join(dir, "blob"))
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "blob"), bytes.Repeat([]byte{'x'}, 2<<20), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
-	if err := f.Truncate(2 << 30); err != nil {
-		t.Fatal(err)
-	}
+}
+
+// runHeavy runs with the heavy threshold lowered to 1MiB, so hugeCache counts
+// as huge. See heavyThreshold: the variable can only lower it.
+func runHeavy(t *testing.T, home string, args ...string) (string, int) {
+	t.Helper()
+	return runWith(t, home, []string{"RECLAIM_HEAVY_THRESHOLD=1M"}, args...)
 }
 
 // A discovered cache is claimed for its location, which says nothing about what
@@ -241,11 +251,11 @@ func TestDiscoverDoesNotPlanAHugeCacheByDefault(t *testing.T) {
 	home := fixtureHome(t)
 	hugeCache(t, home, "hugecache")
 
-	out, _ := run(t, home, "clean", "--discover", "--json")
+	out, _ := runHeavy(t, home, "clean", "--discover", "--json")
 
 	for _, id := range planned(t, out) {
 		if id == "xdg-hugecache" {
-			t.Fatalf("a 2GiB discovered cache was planned by a default run:\n%s", out)
+			t.Fatalf("a huge discovered cache was planned by a default run:\n%s", out)
 		}
 	}
 }
@@ -256,7 +266,7 @@ func TestDiscoverPlansAHugeCacheWhenHeavyIsGiven(t *testing.T) {
 	home := fixtureHome(t)
 	hugeCache(t, home, "hugecache")
 
-	out, _ := run(t, home, "clean", "--discover", "--heavy", "--json")
+	out, _ := runHeavy(t, home, "clean", "--discover", "--heavy", "--json")
 
 	for _, id := range planned(t, out) {
 		if id == "xdg-hugecache" {
@@ -272,7 +282,7 @@ func TestRaisingTheTierAloneDoesNotReachAHugeCache(t *testing.T) {
 	home := fixtureHome(t)
 	hugeCache(t, home, "hugecache")
 
-	out, _ := run(t, home, "clean", "--discover", "--tier", "5", "--json")
+	out, _ := runHeavy(t, home, "clean", "--discover", "--tier", "5", "--json")
 
 	for _, id := range planned(t, out) {
 		if id == "xdg-hugecache" {
@@ -302,9 +312,9 @@ func TestDiscoverOffersTheHugeCacheItHeldBack(t *testing.T) {
 	home := fixtureHome(t)
 	hugeCache(t, home, "hugecache")
 
-	out, _ := run(t, home, "clean", "--discover")
+	out, _ := runHeavy(t, home, "clean", "--discover")
 
-	for _, want := range []string{".cache/hugecache", "2.0GiB", "--heavy"} {
+	for _, want := range []string{".cache/hugecache", "2.0MiB", "--heavy"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report does not mention %q:\n%s", want, out)
 		}

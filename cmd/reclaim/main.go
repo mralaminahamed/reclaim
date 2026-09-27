@@ -229,7 +229,7 @@ func cmdClean(args []string) int {
 	// assumption about cost that nobody checked. Now that the size is known,
 	// revisit it: a 2GiB cache is as regenerable as a 2MiB one and nothing
 	// like as cheap.
-	discover.PromoteHeavy(reg, discover.HeavyThreshold)
+	discover.PromoteHeavy(reg, heavyThreshold(os.Getenv))
 	lock.Apply(reg, lock.DefaultRules(home), lock.Running())
 
 	opts := plan.Options{
@@ -477,4 +477,17 @@ func cmdHistory(args []string) int {
 		}
 	}
 	return 0
+}
+
+// heavyThreshold is the size above which a discovered cache needs --heavy.
+// RECLAIM_HEAVY_THRESHOLD may lower it and never raise it: lowering holds more
+// caches back, raising would let a default run reach a bigger one, and nothing
+// in the environment may widen what a run deletes. The tests use it to make a
+// "huge" cache out of megabytes rather than allocating gigabytes.
+func heavyThreshold(getenv func(string) string) int64 {
+	n, err := fsutil.ParseSize(getenv("RECLAIM_HEAVY_THRESHOLD"))
+	if err != nil || n <= 0 || n > discover.HeavyThreshold {
+		return discover.HeavyThreshold
+	}
+	return n
 }
