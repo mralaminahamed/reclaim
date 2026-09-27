@@ -551,6 +551,17 @@ internal/fsutil/     sizes, mounts, pressure and age
 internal/testharness/ sealed sandbox the end-to-end tests run the binary in
 ```
 
+Chromium and Electron apps get a deeper sweep. Their data directory is known by
+Chromium's own marker files (`Local State`, or `Preferences` with `Network
+Persistent State`), and inside one the layout is fixed: cache-named directories
+are claimed in the directory itself, in each profile, and in each
+`Partitions/<id>/` -- Postman keeps a whole browser per workspace there.
+`Service Worker/CacheStorage` is web apps' offline data, not a cache: it is
+offered as lossy, behind `--site-data --allow-lossy`, because deleting it can
+log you out or make an app download everything again. While such an app runs it
+holds a `SingletonLock` naming its host and pid, and its caches are skipped even
+when the app is not in the lock table.
+
 Discovery uses two different rules on purpose. Everything directly under
 `~/.cache` is regenerable by the XDG basedir spec, so it is claimed by *location*
 and needs no whitelist. A cache nested inside `~/.config` sits beside real

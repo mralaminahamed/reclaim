@@ -23,6 +23,10 @@ var cacheNames = []string{
 	"cache", "code cache", "gpucache", "shadercache", "cacheddata",
 	"dawncache", "dawngraphitecache", "grshadercache", "crashpad",
 	"cache_data", "component_crx_cache", "logs",
+	// Newer Chromium GPU caches, extension downloads, and VS Code's
+	// downloaded VSIX files and profile cache.
+	"graphitedawncache", "dawnwebgpucache", "extensions_crx_cache",
+	"cachedextensionvsixs", "cachedprofilesdata",
 }
 
 // protectedNames hold real application state: session tokens, local databases,

@@ -270,3 +270,41 @@ func TestScenarioCommittedVendorSurvivesIdleCleanup(t *testing.T) {
 		t.Errorf("the ignored vendor/ survived:\n%s", r.Out)
 	}
 }
+
+// A running Electron app the rule table has never heard of announces itself
+// with SingletonLock. Its caches must survive a discovering apply; a stopped
+// app's caches go.
+func TestScenarioRunningElectronAppKeepsItsCache(t *testing.T) {
+	host, err := os.Hostname()
+	if err != nil {
+		t.Skip("no hostname")
+	}
+	s := th.New(t, bin)
+	// Where apps keep their data differs by platform: ~/.config on Linux,
+	// ~/Library/Application Support on macOS.
+	apps, _ := filepath.Rel(s.Root, discover.NestedRoots(s.Home)[0])
+	s.Build(
+		th.Entry{Path: filepath.Join(apps, "Running/Local State"), Kind: th.File, Size: 10},
+		th.Entry{Path: filepath.Join(apps, "Running/Cache/blob"), Kind: th.File, Size: 4096, Protected: true},
+		th.Entry{Path: filepath.Join(apps, "Stopped/Local State"), Kind: th.File, Size: 10},
+		th.Entry{Path: filepath.Join(apps, "Stopped/Partitions/p/Cache/blob"), Kind: th.File, Size: 4096},
+	)
+	// Chromium's lock is a symlink whose target is "host-pid", not a path,
+	// so it is made directly rather than through Build, which resolves
+	// relative targets against the sandbox.
+	if err := os.Symlink(fmt.Sprintf("%s-%d", host, os.Getpid()), filepath.Join(s.Root, apps, "Running/SingletonLock")); err != nil {
+		t.Fatal(err)
+	}
+
+	r := s.Apply("clean", "--apply", "--yes", "--discover")
+
+	if r.Code != 0 {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+	if !strings.Contains(r.Out, "Running") || !strings.Contains(r.Out, "Locked") {
+		t.Errorf("the running app was not reported as locked:\n%s", r.Out)
+	}
+	if _, err := os.Stat(filepath.Join(s.Root, apps, "Stopped/Partitions/p/Cache")); !os.IsNotExist(err) {
+		t.Errorf("the stopped app's partition cache survived:\n%s", r.Out)
+	}
+}
