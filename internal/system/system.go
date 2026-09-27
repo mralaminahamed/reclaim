@@ -90,6 +90,14 @@ func Add(r *unit.Registry, env Env) {
 	// honestly.
 	switch {
 	case env.Has("apt-get"):
+		// autoclean first, free: it drops only packages no index offers any
+		// more, which cannot be downloaded again and so serve nothing. Which
+		// those are only apt can work out, so the dry run says 0B and the
+		// apply measures what it freed. clean, a tier up, takes the rest.
+		add("system-apt-autoclean", "apt autoclean", "sudo apt-get autoclean", unit.TierNative)
+		if u, ok := r.Get("system-apt-autoclean"); ok {
+			u.Detail = []string{"packages no longer downloadable; freed space is measured when it runs"}
+		}
 		// clean also drops the two binary package indexes, which apt rebuilds
 		// on its next run and which are often larger than the archive.
 		addCached("system-apt", "apt cache clean", "sudo apt-get clean",

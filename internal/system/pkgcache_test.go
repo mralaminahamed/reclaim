@@ -57,7 +57,9 @@ func TestPackageCacheUnitsAreMeasured(t *testing.T) {
 		r := unit.NewRegistry()
 		Add(r, Env{Has: onlyHas(bin)})
 		for _, u := range r.All() {
-			if strings.HasPrefix(u.ID, "system-") && u.ID != "system-crash" {
+			// The autoclean's yield is the packages no index offers any more,
+			// which only apt can work out; it is measured when it runs.
+			if strings.HasPrefix(u.ID, "system-") && u.ID != "system-crash" && u.ID != "system-apt-autoclean" {
 				if len(u.SizePaths) == 0 {
 					t.Errorf("%s reports no measurable size", u.ID)
 				}
@@ -108,5 +110,34 @@ func TestNoKernelUnitOnNonAptSystems(t *testing.T) {
 		if _, ok := r.Get("system-kernels"); ok {
 			t.Errorf("kernel unit registered on a %s system", bin)
 		}
+	}
+}
+
+// autoclean drops only packages that can no longer be downloaded, so it is
+// free and runs before the clean, which costs a re-download of the rest.
+func TestAptAutocleanRunsBeforeClean(t *testing.T) {
+	r := unit.NewRegistry()
+	Add(r, Env{Has: onlyHas("apt-get")})
+	trim, ok := r.Get("system-apt-autoclean")
+	if !ok {
+		t.Fatal("system-apt-autoclean not registered")
+	}
+	wipe, _ := r.Get("system-apt")
+	if trim.Command != "sudo apt-get autoclean" || trim.Tier != unit.TierNative || wipe.Tier <= trim.Tier {
+		t.Errorf("autoclean %q tier %d, clean tier %d", trim.Command, trim.Tier, wipe.Tier)
+	}
+	if trim.Flag != "--system" || !trim.NeedsRoot || !trim.Reversible {
+		t.Errorf("flag %q needsRoot %v reversible %v", trim.Flag, trim.NeedsRoot, trim.Reversible)
+	}
+	if len(trim.Detail) == 0 {
+		t.Error("no detail: a 0B dry-run line needs to say why")
+	}
+}
+
+func TestAptAutocleanNeedsApt(t *testing.T) {
+	r := unit.NewRegistry()
+	Add(r, Env{Has: onlyHas("dnf")})
+	if _, ok := r.Get("system-apt-autoclean"); ok {
+		t.Error("registered without apt")
 	}
 }

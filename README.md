@@ -189,7 +189,10 @@ the result cannot be previewed honestly.
 
 The dry run reports what each will actually free. `apt-get clean` counts the two
 binary package indexes it also drops, not only the archive; the journal vacuum
-counts the journal less the window it keeps.
+counts the journal less the window it keeps. On apt, `apt-get autoclean` runs
+first as a free unit: it drops only packages that can no longer be downloaded.
+Only apt can tell which those are, so its dry-run line reads 0B and the apply
+measures what it freed.
 
 It needs root, and `reclaim` asks for it once up front via `sudo -v` — a single
 password prompt rather than one per unit. If elevation is declined the system
