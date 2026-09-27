@@ -32,3 +32,16 @@ func NestedRoots(home string) []string {
 		filepath.Join(home, ".local", "share"),
 	}
 }
+
+// NestedRootsFrom is NestedRoots moved by $XDG_CONFIG_HOME and
+// $XDG_DATA_HOME, each where it is set to an absolute path the runner would
+// accept.
+func NestedRootsFrom(home string, getenv func(string) string) []string {
+	roots := NestedRoots(home)
+	for i, key := range []string{"XDG_CONFIG_HOME", "XDG_DATA_HOME"} {
+		if v := getenv(key); filepath.IsAbs(v) && runner.CheckSafe(v, home) == nil {
+			roots[i] = filepath.Clean(v)
+		}
+	}
+	return roots
+}

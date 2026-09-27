@@ -24,3 +24,7 @@ func CacheRootFrom(home string, _ func(string) string) string { return CacheRoot
 func NestedRoots(home string) []string {
 	return []string{filepath.Join(home, "Library", "Application Support")}
 }
+
+// NestedRootsFrom is NestedRoots: the XDG variables do not move
+// ~/Library/Application Support.
+func NestedRootsFrom(home string, _ func(string) string) []string { return NestedRoots(home) }

@@ -1,6 +1,7 @@
 package lock
 
 import (
+	"path/filepath"
 	"regexp"
 	"testing"
 
@@ -122,6 +123,35 @@ func TestEveryDefaultRuleHasRoots(t *testing.T) {
 		}
 		if r.Pattern == nil {
 			t.Errorf("rule %q has no pattern", r.Name)
+		}
+	}
+}
+
+// An app told its config lives elsewhere keeps its caches there. The lock
+// covers both places: locking more only ever keeps something.
+func TestDefaultRulesFollowRelocatedXDGDirs(t *testing.T) {
+	env := map[string]string{"XDG_CONFIG_HOME": "/cfg", "XDG_DATA_HOME": "/data", "XDG_CACHE_HOME": "/cache"}
+	rules := DefaultRulesFrom("/home/u", func(k string) string { return env[k] })
+	roots := map[string]bool{}
+	for _, r := range rules {
+		for _, p := range r.Roots {
+			roots[p] = true
+		}
+	}
+	for _, want := range []string{"/cfg/Slack", "/home/u/.config/Slack", "/data/zed", "/cache/zed", "/home/u/.local/share/zed"} {
+		if !roots[want] {
+			t.Errorf("no rule root %s", want)
+		}
+	}
+}
+
+func TestDefaultRulesIgnoreRelativeXDGDirs(t *testing.T) {
+	rules := DefaultRulesFrom("/home/u", func(string) string { return "rel" })
+	for _, r := range rules {
+		for _, p := range r.Roots {
+			if !filepath.IsAbs(p) {
+				t.Fatalf("rule %s has relative root %s", r.Name, p)
+			}
 		}
 	}
 }
