@@ -45,6 +45,7 @@ complete -c reclaim -n '__fish_seen_subcommand_from clean' -l claude-vm -d 'opt 
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l system -d 'opt in to system units'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l claude-jobs -d 'opt in to Claude job units'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l claude-plugins -d 'opt in to Claude plugin cache'
+complete -c reclaim -n '__fish_seen_subcommand_from clean' -l site-data -d 'opt in to web apps offline storage (lossy)'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l claude-history -d 'opt in to Claude transcripts'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l heavy -d 'opt in to large discovered caches'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l flatpak -d 'opt in to flatpak units'

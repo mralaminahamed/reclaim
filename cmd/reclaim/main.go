@@ -96,7 +96,7 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 var optInFlags = []string{"gradle", "maven", "jetbrains", "browsers", "playwright",
 	"docker", "docker-containers", "docker-volumes", "claude-vm", "system", "claude-jobs", "claude-plugins",
 	"claude-history", "heavy", "flatpak", "kernels", "models", "xcode", "simulators",
-	"obsolete", "trash", "steam-compatdata", "timemachine"}
+	"obsolete", "trash", "steam-compatdata", "timemachine", "site-data"}
 
 func cmdClean(args []string) int {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
@@ -224,7 +224,11 @@ func cmdClean(args []string) int {
 	if *doDiscover {
 		discover.XDGCaches(reg, discover.CacheRoot(home))
 		discover.NestedCaches(reg, discover.NestedRoots(home))
+		discover.ChromiumCaches(reg, discover.NestedRoots(home))
 	}
+	// Offered whether or not --discover is given: the unit does nothing
+	// without --site-data, and it is lossy, so --allow-lossy as well.
+	discover.SiteData(reg, discover.NestedRoots(home))
 	probe.All(reg, *workers)
 	// A discovered unit was claimed for where it sits, so its tier is an
 	// assumption about cost that nobody checked. Now that the size is known,
@@ -232,6 +236,10 @@ func cmdClean(args []string) int {
 	// like as cheap.
 	discover.PromoteHeavy(reg, heavyThreshold(os.Getenv))
 	lock.Apply(reg, lock.DefaultRules(home), lock.Running())
+	// Chromium and Electron apps announce themselves with a SingletonLock,
+	// which covers the ones the rule table does not name.
+	host, _ := os.Hostname()
+	lock.Singletons(reg, host, lock.Alive)
 
 	opts := plan.Options{
 		TierCap:    unit.Tier(*tier),

@@ -19,7 +19,7 @@ _reclaim() {
         'completion:print a shell completion script'
     )
     groups=(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes
-            steam-compatdata timemachine claude-vm system claude-jobs claude-plugins claude-history
+            steam-compatdata timemachine site-data claude-vm system claude-jobs claude-plugins claude-history
             heavy flatpak kernels models xcode simulators obsolete trash)
     clean_flags=(
         '--apply[actually delete]'
@@ -36,7 +36,7 @@ _reclaim() {
         '--sites-root[where projects live]:directory:_files -/'
         '--only[restrict to these unit ids]:unit:_reclaim_units'
         '--exclude[drop these unit ids]:unit:_reclaim_units'
-        '--with[opt-in flag by name]:group:(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes steam-compatdata timemachine claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash)'
+        '--with[opt-in flag by name]:group:(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes steam-compatdata timemachine site-data claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash)'
         '--gradle[opt in to gradle units]'
         '--maven[opt in to maven units]'
         '--jetbrains[opt in to jetbrains units]'
@@ -51,6 +51,7 @@ _reclaim() {
         '--system[opt in to system units]'
         '--claude-jobs[opt in to Claude job units]'
         '--claude-plugins[opt in to Claude plugin units]'
+        '--site-data[opt in to web apps offline storage (lossy)]'
         '--claude-history[opt in to Claude transcript units]'
         '--heavy[opt in to large discovered caches]'
         '--flatpak[opt in to flatpak units]'
