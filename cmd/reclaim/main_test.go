@@ -831,3 +831,29 @@ func TestRelocatedXDGCacheHomeIsWhereCachesAreFound(t *testing.T) {
 		}
 	}
 }
+
+// Electron apps write their user-data directory under the config home, so a
+// relocated one is where their caches are.
+func TestRelocatedXDGConfigHomeIsWhereAppCachesAreFound(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the XDG variables do not move ~/Library")
+	}
+	home, cfg := t.TempDir(), t.TempDir()
+	app := filepath.Join(cfg, "SomeApp")
+	for _, f := range []string{"Local State", "Cache/Cache_Data/data_0"} {
+		p := filepath.Join(app, f)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, make([]byte, 8192), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, code := runWith(t, home, []string{"XDG_CONFIG_HOME=" + cfg}, "clean", "--discover", "--json")
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, `"disc-SomeApp-Cache"`) {
+		t.Errorf("relocated app's cache not found:\n%s", out)
+	}
+}

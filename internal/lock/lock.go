@@ -79,10 +79,32 @@ func anyPathUnder(paths, roots []string) bool {
 
 // DefaultRules returns the built-in lock table for a given home directory.
 func DefaultRules(home string) []Rule {
+	return DefaultRulesFrom(home, func(string) string { return "" })
+}
+
+// xdgHomes maps each default XDG location to the variable that moves it.
+var xdgHomes = []struct{ rel, key string }{
+	{".config", "XDG_CONFIG_HOME"},
+	{".cache", "XDG_CACHE_HOME"},
+	{".local/share", "XDG_DATA_HOME"},
+}
+
+// DefaultRulesFrom is DefaultRules with each root under ~/.config, ~/.cache
+// or ~/.local/share also rooted where its XDG variable moves it. Both places
+// stay: an app that ignores the variable still writes to the default, and
+// locking more only ever keeps something. Relative values are invalid by the
+// XDG spec and ignored.
+func DefaultRulesFrom(home string, getenv func(string) string) []Rule {
 	j := func(rel ...string) []string {
 		out := make([]string, 0, len(rel))
 		for _, x := range rel {
 			out = append(out, filepath.Join(home, x))
+			for _, h := range xdgHomes {
+				rest, ok := strings.CutPrefix(x, h.rel+"/")
+				if v := getenv(h.key); ok && filepath.IsAbs(v) {
+					out = append(out, filepath.Join(v, rest))
+				}
+			}
 		}
 		return out
 	}

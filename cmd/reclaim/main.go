@@ -224,19 +224,19 @@ func cmdClean(args []string) int {
 	}
 	if *doDiscover {
 		discover.XDGCaches(reg, discover.CacheRootFrom(home, os.Getenv))
-		discover.NestedCaches(reg, discover.NestedRoots(home))
-		discover.ChromiumCaches(reg, discover.NestedRoots(home))
+		discover.NestedCaches(reg, discover.NestedRootsFrom(home, os.Getenv))
+		discover.ChromiumCaches(reg, discover.NestedRootsFrom(home, os.Getenv))
 	}
 	// Offered whether or not --discover is given: the unit does nothing
 	// without --site-data, and it is lossy, so --allow-lossy as well.
-	discover.SiteData(reg, discover.NestedRoots(home))
+	discover.SiteData(reg, discover.NestedRootsFrom(home, os.Getenv))
 	probe.All(reg, *workers)
 	// A discovered unit was claimed for where it sits, so its tier is an
 	// assumption about cost that nobody checked. Now that the size is known,
 	// revisit it: a 2GiB cache is as regenerable as a 2MiB one and nothing
 	// like as cheap.
 	discover.PromoteHeavy(reg, heavyThreshold(os.Getenv))
-	lock.Apply(reg, lock.DefaultRules(home), lock.Running())
+	lock.Apply(reg, lock.DefaultRulesFrom(home, os.Getenv), lock.Running())
 	// Chromium and Electron apps announce themselves with a SingletonLock,
 	// which covers the ones the rule table does not name.
 	host, _ := os.Hostname()

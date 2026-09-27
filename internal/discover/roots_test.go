@@ -74,3 +74,27 @@ func TestCacheRootIgnoresUnusableXDGCacheHome(t *testing.T) {
 		}
 	}
 }
+
+func TestNestedRootsFollowXDGConfigAndDataHome(t *testing.T) {
+	home, cfg, data := t.TempDir(), t.TempDir(), t.TempDir()
+	env := map[string]string{"XDG_CONFIG_HOME": cfg, "XDG_DATA_HOME": data}
+	got := NestedRootsFrom(home, func(k string) string { return env[k] })
+	want := []string{cfg, data}
+	if runtime.GOOS == "darwin" {
+		want = NestedRoots(home)
+	}
+	if len(got) != len(want) || got[0] != want[0] || got[len(got)-1] != want[len(want)-1] {
+		t.Fatalf("roots %v, want %v", got, want)
+	}
+}
+
+func TestNestedRootsIgnoreUnusableXDGValues(t *testing.T) {
+	home := t.TempDir()
+	for _, v := range []string{"", "rel/dir", "/", home, "/usr"} {
+		got := NestedRootsFrom(home, func(string) string { return v })
+		want := NestedRoots(home)
+		if len(got) != len(want) || got[0] != want[0] || got[len(got)-1] != want[len(want)-1] {
+			t.Errorf("value %q: roots %v, want the defaults %v", v, got, want)
+		}
+	}
+}
