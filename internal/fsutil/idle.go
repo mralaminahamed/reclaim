@@ -86,11 +86,27 @@ func idleTree(root string, cutoff time.Time, dev uint64) bool {
 	return idle && err == nil
 }
 
-// lastTouch is the latest of access, modification and change time.
+// lastTouch is the latest of access, modification and change time -- except
+// that a directory's access time is left out. Listing a directory sets it,
+// and reclaim lists every directory it examines, so counting it would make
+// the check its own evidence of use.
 func lastTouch(fi fs.FileInfo) time.Time {
-	t := lastUse(fi)
+	t := fi.ModTime()
+	if !fi.IsDir() {
+		t = lastUse(fi)
+	}
 	if c, ok := changeTime(fi); ok && c.After(t) {
 		t = c
 	}
 	return t
+}
+
+// OwnedBy reports whether path itself, not following a link, belongs to uid.
+func OwnedBy(path string, uid uint32) bool {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+	st, ok := statOf(info)
+	return ok && st.uid == uid
 }

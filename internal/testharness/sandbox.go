@@ -25,6 +25,8 @@ type Sandbox struct {
 	// Root holds everything. Home is the fake home, Bin the stub PATH,
 	// Outside a sibling tree that hostile symlinks point into, Tmp is TMPDIR.
 	Root, Home, Bin, Outside, Tmp string
+	// ExtraEnv is appended to the sealed environment of every run.
+	ExtraEnv []string
 
 	binary    string
 	log       string
@@ -70,7 +72,7 @@ func linkShell(t testing.TB, dir string) {
 	}
 }
 
-func (s *Sandbox) Env() []string { return SealedEnv(s.Home, s.Bin, s.Tmp) }
+func (s *Sandbox) Env() []string { return append(SealedEnv(s.Home, s.Bin, s.Tmp), s.ExtraEnv...) }
 
 // SealedEnv is the whole environment a sandboxed run sees. Nothing is
 // inherited.
@@ -84,6 +86,9 @@ func SealedEnv(home, bin, tmp string) []string {
 		// Where flatpak lists running instances. Sealed like the rest, so the
 		// host's running apps cannot lock a sandbox's units.
 		"XDG_RUNTIME_DIR=" + filepath.Join(tmp, "run"),
+		// The scratch directories reclaim sweeps by default: the sandbox's
+		// own tmp, never the developer's /tmp.
+		"RECLAIM_TMP_ROOTS=" + tmp,
 		"XDG_STATE_HOME=" + filepath.Join(home, ".local", "state"),
 		"TMPDIR=" + tmp,
 		"LANG=C",

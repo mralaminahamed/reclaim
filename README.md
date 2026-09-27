@@ -293,6 +293,32 @@ the relocated one. A relative value is
 ignored, as the XDG spec requires. A variable aimed at home, at `/` or at
 anything else the runner would refuse to delete registers nothing.
 
+### Temporary files
+
+Compile caches that tools keep in the temporary directory
+(`node-compile-cache`, `v8-compile-cache-<uid>`, `jest_rs`, `phpstan`) are
+cleaned by default at any age, like any other cache.
+
+Your own other entries in `/tmp`, `/var/tmp` and `$TMPDIR` go once nothing has
+used them for 7 days:
+
+- "Used" counts the entry and everything under it: the latest of a file's
+  access, modification and change time. Change time counts because an extracted
+  archive keeps its old modification times. A directory's access time does not
+  count, since listing it (reclaim included) sets it.
+- An entry holding a socket, a pipe or a device is never idle. That is where
+  tmux and ssh-agent live.
+- Entries on another filesystem, entries that can't be read in full, and other
+  users' entries are left alone.
+- Each entry is checked again just before deletion. One used since the plan was
+  made is listed under **Skipped**.
+
+Scratch is disposable by contract, and systemd-tmpfiles expires it after 30
+days anyway, so both units count as reversible and run without a flag.
+`RECLAIM_TMP_IDLE=1h` shortens the idle period, and it can never lengthen it.
+`RECLAIM_TMP_ROOTS=/a:/b` replaces the swept directories; the test harness uses
+it to keep runs off the real `/tmp`.
+
 ### Trash
 
 `--trash --allow-lossy`. Earlier versions emptied the trash by default as though

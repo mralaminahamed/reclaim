@@ -107,3 +107,26 @@ func TestIdleSince(t *testing.T) {
 		t.Error("a missing path counts as idle")
 	}
 }
+
+// Listing a directory sets its access time -- and reclaim lists it to decide
+// and again to measure. That is not use, so a directory's access time is not
+// counted; its files' are.
+func TestIdleIgnoresADirectorysAccessTime(t *testing.T) {
+	dir := t.TempDir()
+	mkfile(t, filepath.Join(dir, "listed/file"))
+	cutoff := time.Now().Add(time.Hour)
+	later := cutoff.Add(time.Hour)
+	listed := filepath.Join(dir, "listed")
+	if err := os.Chtimes(listed, later, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !IdleSince(listed, cutoff) {
+		t.Error("a directory only listed since the cutoff counted as used")
+	}
+	if err := os.Chtimes(filepath.Join(listed, "file"), later, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if IdleSince(listed, cutoff) {
+		t.Error("a file read since the cutoff did not count as use")
+	}
+}
