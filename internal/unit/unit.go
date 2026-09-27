@@ -75,6 +75,11 @@ type Unit struct {
 	// measured or removed, and the directory itself is never touched. A crash
 	// dump written this morning is the one being investigated.
 	MinAge time.Duration
+	// LRU marks a cache whose files stand alone -- content-addressed, each one
+	// a miss when absent, never half of something. Under a free-space target
+	// it gives up files least recently used first and stops at the target,
+	// rather than going whole. Without a target it goes whole, as any unit.
+	LRU bool
 	// Detail is printed under the unit in the report. A byte count is enough
 	// to consent to deleting a cache and is not enough to consent to removing
 	// named packages.

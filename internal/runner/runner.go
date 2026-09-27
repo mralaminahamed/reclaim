@@ -141,6 +141,23 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, []remove.Skip, error) {
 	var removed []string
 	var skipped []remove.Skip
 	var planned []string
+	take := func(t string) error {
+		// Checked again against what the path resolves to, at the moment of
+		// deletion: a symlinked component can make a harmless-looking path
+		// land in a protected directory.
+		if err := checkResolved(t); err != nil {
+			return err
+		}
+		before := fsutil.Measure([]string{t}).Allocated
+		out := rm(t)
+		after := fsutil.Measure([]string{t}).Allocated
+		freed += max(before-after, 0)
+		skipped = append(skipped, out.Skipped...)
+		if out.Gone {
+			removed = append(removed, t)
+		}
+		return out.Err
+	}
 	for _, p := range u.Paths {
 		if p == "" {
 			continue
@@ -159,22 +176,24 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, []remove.Skip, error) {
 				planned = append(planned, t)
 				continue
 			}
-			// Checked again against what the path resolves to, at the moment
-			// of deletion: a symlinked component can make a harmless-looking
-			// path land in a protected directory.
-			if err := checkResolved(t); err != nil {
+			// Under a target, a cache of standalone files gives up its least
+			// recently used ones first and keeps the rest once the target is
+			// met. Short of it, the remainder goes whole below.
+			if u.LRU && u.MinAge <= 0 && r.TargetBytes > 0 {
+				for _, f := range fsutil.FilesOldestFirst(t) {
+					if err := checkSafe(f); err != nil {
+						return freed, removed, skipped, err
+					}
+					if err := take(f); err != nil {
+						return freed, removed, skipped, err
+					}
+					if r.targetMet() {
+						return freed, removed, skipped, nil
+					}
+				}
+			}
+			if err := take(t); err != nil {
 				return freed, removed, skipped, err
-			}
-			before := fsutil.Measure([]string{t}).Allocated
-			out := rm(t)
-			after := fsutil.Measure([]string{t}).Allocated
-			freed += max(before-after, 0)
-			skipped = append(skipped, out.Skipped...)
-			if out.Gone {
-				removed = append(removed, t)
-			}
-			if out.Err != nil {
-				return freed, removed, skipped, out.Err
 			}
 		}
 	}
