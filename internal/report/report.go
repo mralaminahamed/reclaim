@@ -123,7 +123,7 @@ func JSON(w io.Writer, s Summary) error {
 func toJSON(us []*unit.Unit) []jsonUnit {
 	out := make([]jsonUnit, 0, len(us))
 	for _, u := range us {
-		out = append(out, jsonUnit{u.ID, u.Label, int(u.Tier), u.Bytes, u.Mount, u.Flag, u.LockedBy, u.PID, u.Detail, u.Kind == unit.KindCmd})
+		out = append(out, jsonUnit{u.ID, u.Label, int(u.Tier), u.Bytes, u.Mount, u.Flag, u.LockedBy, u.PID, u.Detail, u.Measured})
 	}
 	return out
 }
@@ -136,13 +136,21 @@ func Text(w io.Writer, s Summary) {
 
 	if len(s.Selected) > 0 {
 		fmt.Fprintln(w, "\n== Reclaimable ==")
+		measured := false
 		for _, u := range s.Selected {
-			fmt.Fprintf(w, "  • %-38s %10s\n", u.Label, fsutil.Human(u.Bytes))
+			mark := ""
+			if u.Measured {
+				mark, measured = " *", true
+			}
+			fmt.Fprintf(w, "  • %-38s %10s%s\n", u.Label, fsutil.Human(u.Bytes), mark)
 			// A size is enough to consent to deleting a cache, and not enough
 			// to consent to removing named packages.
 			for _, d := range u.Detail {
 				fmt.Fprintf(w, "      %s\n", d)
 			}
+		}
+		if measured {
+			fmt.Fprintln(w, "  * the change in free space around the command; other writers on the disk can disturb it")
 		}
 	}
 

@@ -180,29 +180,34 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, []remove.Skip, error) {
 	return freed, removed, skipped, nil
 }
 
-// runMeasured runs a command whose yield cannot be known from anything on
-// disk, and reports what actually freed rather than an estimate: free space on
-// the unit's mount, before and after. A command that fails partway can still
-// have freed something, so the delta is measured either way and only the
-// error is what makes the run count as failed.
+// runMeasured runs a command and reports what free space did around it,
+// because nothing on disk can say in advance what a tool's own cleanup will
+// remove. The figure is taken on the mount probe resolved for the unit. A
+// failed command reports nothing freed. If free space cannot be read on
+// either side the unit's estimate is returned instead, and the unit is not
+// marked Measured -- "after minus nothing" would be the whole disk.
 func (r *Runner) runMeasured(u *unit.Unit, run func(string) error) (int64, []string, error) {
 	avail := r.Avail
 	if avail == nil {
 		avail = fsutil.AvailBytes
 	}
-	mount := u.MountHint
+	mount := u.Mount
 	if mount == "" {
-		mount = "/"
+		mount = u.MountHint
 	}
-	before, _ := avail(mount)
+	if mount == "" {
+		mount, _ = os.UserHomeDir()
+	}
+	before, beforeErr := avail(mount)
 	err := run(u.Command)
-	after, availErr := avail(mount)
+	after, afterErr := avail(mount)
 	if err != nil {
 		return 0, nil, err
 	}
-	if availErr != nil {
+	if beforeErr != nil || afterErr != nil {
 		return u.Bytes, nil, nil
 	}
+	u.Measured = true
 	return max(after-before, 0), nil, nil
 }
 

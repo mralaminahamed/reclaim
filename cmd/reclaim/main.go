@@ -322,6 +322,12 @@ func cmdClean(args []string) int {
 			failed = append(failed, report.Failure{Unit: res.Unit, Reason: res.Err.Error()})
 			continue
 		}
+		// After --apply each line shows what the unit actually freed, not the
+		// probe's estimate; the total already did, and a line that disagreed
+		// with its own total was the report contradicting itself.
+		if *apply {
+			res.Unit.Bytes = res.Freed
+		}
 		total += res.Freed
 		ran = append(ran, res.Unit)
 	}

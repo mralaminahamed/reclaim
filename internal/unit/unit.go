@@ -94,6 +94,10 @@ type Unit struct {
 	// free space on MountHint before and after instead of trusting Bytes, which
 	// --apply then reports in place of the dry-run estimate.
 	MeasureFreed bool
+	// Measured is set by the runner when the figure it reports for this unit
+	// is the measured change in free space rather than an estimate. Other
+	// writers on the same filesystem can disturb it, and the report says so.
+	Measured bool
 
 	// Discovered marks a unit the scanners claimed by shape rather than one
 	// the catalog named deliberately. Its tier is an assumption, not a

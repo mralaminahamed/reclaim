@@ -30,11 +30,23 @@ func TestSkippedIsReportedInTextAndJSON(t *testing.T) {
 	}
 }
 
-func TestCommandUnitsAreMarkedMeasured(t *testing.T) {
-	s := Summary{Selected: []*unit.Unit{{ID: "c", Kind: unit.KindCmd}, {ID: "p", Kind: unit.KindPaths}}}
+// Only a figure the runner actually measured is labelled so. A dry run, or a
+// command whose free space could not be read, reports an estimate.
+func TestOnlyMeasuredFiguresAreLabelled(t *testing.T) {
+	s := Summary{Selected: []*unit.Unit{
+		{ID: "measured", Kind: unit.KindCmd, Measured: true},
+		{ID: "estimate", Kind: unit.KindCmd},
+		{ID: "paths", Kind: unit.KindPaths},
+	}}
 	var js bytes.Buffer
 	JSON(&js, s)
-	if !strings.Contains(js.String(), `"measured": true`) || strings.Count(js.String(), `"measured": true`) != 1 {
-		t.Errorf("want exactly the command unit marked measured:\n%s", js.String())
+	if strings.Count(js.String(), `"measured": true`) != 1 {
+		t.Errorf("want exactly the measured unit labelled:\n%s", js.String())
+	}
+
+	var txt bytes.Buffer
+	Text(&txt, s)
+	if !strings.Contains(txt.String(), "change in free space") {
+		t.Errorf("text report does not say a measured figure is approximate:\n%s", txt.String())
 	}
 }

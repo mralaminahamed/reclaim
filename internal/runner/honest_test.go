@@ -102,3 +102,55 @@ func TestCommandUnitsReportMeasuredFreed(t *testing.T) {
 		t.Errorf("Freed = %d, want the measured 4000, not the estimate", res.Freed)
 	}
 }
+
+// With no MountHint the runner measured "/", while probe had resolved the unit
+// to the home mount. On a machine with a separate /home the delta was ~0.
+func TestMeasuredCommandUsesTheProbedMount(t *testing.T) {
+	var asked []string
+	u := &unit.Unit{ID: "c", Kind: unit.KindCmd, Command: "true", Mount: "/home"}
+	r := &Runner{Apply: true, Exec: func(string) error { return nil },
+		Avail: func(p string) (int64, error) { asked = append(asked, p); return 0, nil }}
+
+	r.Run([]*unit.Unit{u})
+
+	if len(asked) == 0 || asked[0] != "/home" {
+		t.Errorf("avail asked about %q, want the probed mount /home", asked)
+	}
+}
+
+// If free space could not be read before the command, "after minus zero" is
+// the whole disk. Fall back to the estimate, and do not call it measured.
+func TestUnreadableAvailBeforeFallsBackToTheEstimate(t *testing.T) {
+	calls := 0
+	u := &unit.Unit{ID: "c", Kind: unit.KindCmd, Command: "true", Bytes: 700}
+	r := &Runner{Apply: true, Exec: func(string) error { return nil },
+		Avail: func(string) (int64, error) {
+			calls++
+			if calls == 1 {
+				return 0, os.ErrPermission
+			}
+			return 1 << 40, nil
+		}}
+
+	res := r.Run([]*unit.Unit{u})[0]
+
+	if res.Freed != 700 {
+		t.Errorf("Freed = %d, want the 700 estimate", res.Freed)
+	}
+	if u.Measured {
+		t.Error("an estimate was labelled measured")
+	}
+}
+
+func TestAMeasuredDeltaIsLabelled(t *testing.T) {
+	avail := []int64{1000, 5000}
+	u := &unit.Unit{ID: "c", Kind: unit.KindCmd, Command: "true"}
+	r := &Runner{Apply: true, Exec: func(string) error { return nil },
+		Avail: func(string) (int64, error) { v := avail[0]; avail = avail[1:]; return v, nil }}
+
+	r.Run([]*unit.Unit{u})
+
+	if !u.Measured {
+		t.Error("a measured delta was not labelled measured")
+	}
+}
