@@ -88,12 +88,17 @@ type Unit struct {
 	// asks for elevation once per run rather than letting each unit fail with
 	// an unexplained non-zero exit.
 	NeedsRoot bool
-	// MeasureFreed marks a command whose yield SizePaths cannot state: thinning
-	// APFS snapshots is asked for by a target and an urgency, not told what to
-	// delete, so nothing on disk names what it will take. The runner measures
-	// free space on MountHint before and after instead of trusting Bytes, which
-	// --apply then reports in place of the dry-run estimate.
-	MeasureFreed bool
+	// Measured is set by the runner when the figure it reports for this unit
+	// is the measured change in free space rather than an estimate. Other
+	// writers on the same filesystem can disturb it, and the report says so.
+	Measured bool
+	// Shared is allocated space under the unit that is hard-linked from
+	// outside it: deleting the unit does not free it. Apparent is the sum of
+	// file lengths. Unreadable counts entries probe could not examine, so
+	// Bytes is a lower bound when it is non-zero. All three are set by probe.
+	Shared     int64
+	Apparent   int64
+	Unreadable int
 
 	// Discovered marks a unit the scanners claimed by shape rather than one
 	// the catalog named deliberately. Its tier is an assumption, not a

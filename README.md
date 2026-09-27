@@ -477,7 +477,15 @@ windows, and logging.
   friends are never treated as caches, in any casing.
 - **Protected paths.** A backstop refuses `/`, top-level system directories and
   `$HOME` however a unit is defined, so a malformed unit cannot aim the deleter
-  at the wrong tree.
+  at the wrong tree. It is checked again at the moment of deletion against the
+  path with its symlinks resolved.
+- **Deletion stays inside its tree.** Removal walks each target through a handle
+  opened on the target itself, so no symlink, present from the start or swapped
+  in mid-run, can lead it elsewhere. A link is removed, never followed. A mount
+  point inside a cache belongs to another filesystem and is left alone.
+- **Skipped is not failed.** Anything left in place on purpose, such as a mount
+  point or a directory some tool re-populated while it was being removed, is
+  listed under `== Skipped ==` with the reason, and the run carries on.
 - **The log says what went.** `reclaim history` records the paths each unit
   removed, not just which unit ran — after a `--discover` run the unit list was
   not knowable in advance. Long lists are trimmed with a true count, so a record
@@ -495,6 +503,15 @@ pool — a full discovery run over a developer machine takes about **1.7 seconds
 Locking happens *after* probing, so a locked unit still reports its size and you
 can see what quitting the app would buy you.
 
+Sizes are what deleting would give back: allocated disk blocks, not file lengths,
+so a sparse file counts for what it occupies. A hard-linked file is counted once,
+and only when every link to it is inside what is being deleted. The pnpm store is
+hard-linked into each project's `node_modules`, so deleting the store alone frees
+almost nothing, and it is reported that way. After a run, a path unit reports
+what it measured before minus what is left. A command unit reports the drop in
+free space around running it, marked `measured` in `--json`, because nothing on
+disk could have said in advance what the tool would remove.
+
 ```
 cmd/reclaim/         the CLI
 internal/unit/       unit model and registry
@@ -505,6 +522,7 @@ internal/probe/      parallel measurement
 internal/lock/       running-application detection
 internal/plan/       tier ceiling and selection
 internal/runner/     execution, with a protected-path backstop
+internal/remove/     tree removal that never leaves its target or filesystem
 internal/discover/   caches with no hardcoded rule
 internal/unitfile/   unit definitions loaded from files
 internal/config/     defaults read from a file
@@ -512,6 +530,7 @@ internal/installers/ stale downloads, reported and never removed
 internal/report/     text and JSON output
 internal/oplog/      append-only record of what was deleted
 internal/fsutil/     sizes, mounts, pressure and age
+internal/testharness/ sealed sandbox the end-to-end tests run the binary in
 ```
 
 Discovery uses two different rules on purpose. Everything directly under
@@ -525,7 +544,8 @@ font cache are both disposable; only one of them is cheap. So once sizes are
 known, any discovered unit over 1GiB is re-rated: it moves to the cold-reload
 tier and becomes opt-in behind `--heavy`. It is still reported — with its size
 and the flag that would claim it — because hiding the space would be no better
-than deleting it unasked.
+than deleting it unasked. `RECLAIM_HEAVY_THRESHOLD=500M` lowers that bound; it
+cannot raise it, since nothing in the environment may widen what a run deletes.
 
 ## Development
 

@@ -21,10 +21,10 @@ func fixture(t *testing.T) (string, *unit.Registry) {
 		}
 		return p
 	}
-	one := mk("one/blob", 1000)
-	two := mk("two/blob", 2000)
+	one := mk("one/blob", 4096)
+	two := mk("two/blob", 8192)
 	// A directory name containing a space must survive the round trip.
-	sp := mk("with space/blob", 3000)
+	sp := mk("with space/blob", 12288)
 
 	r := unit.NewRegistry()
 	r.Add(&unit.Unit{ID: "one", Kind: unit.KindPaths, Paths: []string{filepath.Dir(one)}})
@@ -43,8 +43,8 @@ func TestProbeMeasuresEachUnit(t *testing.T) {
 	All(r, 8)
 
 	want := map[string]int64{
-		"one": 1000, "two": 2000, "space": 3000,
-		"multi":  3000, // one + two
+		"one": 4096, "two": 8192, "space": 12288,
+		"multi":  12288, // one + two
 		"absent": 0,
 		"cmd":    0, // a command reclaims an unknown amount until it runs
 	}
@@ -119,7 +119,7 @@ func TestZeroWorkersStillProbes(t *testing.T) {
 	_, r := fixture(t)
 	All(r, 0)
 	u, _ := r.Get("one")
-	if u.Bytes != 1000 {
-		t.Errorf("Bytes = %d, want 1000", u.Bytes)
+	if u.Bytes != 4096 {
+		t.Errorf("Bytes = %d, want 4096", u.Bytes)
 	}
 }

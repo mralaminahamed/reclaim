@@ -74,9 +74,11 @@ _reclaim() {
                                 '--older[days before an installer is stale]:days' \
                                 '--apps[also report applications unused for a long time]' \
                                 '--idle[days unused before an app is reported]:days' \
-                                '--json[machine-readable output]' \
-                                '-n[how many entries]:count' ;;
+                                '--json[machine-readable output]' ;;
         history)    _arguments '-n[how many entries]:count' ;;
+        index)      _arguments '--full[re-read every directory instead of only changed ones]' \
+                                '--root[index only this directory]:directory:_files -/' \
+                                '--workers[parallel walkers]:count' ;;
         completion) _values 'shell' bash zsh fish ;;
     esac
 }

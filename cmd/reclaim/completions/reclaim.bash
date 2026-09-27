@@ -28,7 +28,11 @@ _reclaim() {
             COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
             return
             ;;
-        --free|--below|--tier|--workers|--sites-idle|--sites-root|--min|--older|--idle|-n)
+        --sites-root|--root)
+            COMPREPLY=( $(compgen -d -- "$cur") )
+            return
+            ;;
+        --free|--below|--tier|--workers|--sites-idle|--min|--older|--idle|-n)
             return
             ;;
     esac
@@ -42,10 +46,13 @@ _reclaim() {
                 --heavy --flatpak --kernels --models --xcode --simulators --obsolete --trash" -- "$cur") )
             ;;
         analyze)
-            COMPREPLY=( $(compgen -W "--min -n --installers --older --apps --idle --json" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--min --installers --older --apps --idle --json" -- "$cur") )
             ;;
         history)
             COMPREPLY=( $(compgen -W "-n" -- "$cur") )
+            ;;
+        index)
+            COMPREPLY=( $(compgen -W "--full --root --workers" -- "$cur") )
             ;;
     esac
 }

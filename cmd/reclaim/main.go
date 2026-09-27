@@ -24,6 +24,7 @@ import (
 	"github.com/mralaminahamed/reclaim/internal/oplog"
 	"github.com/mralaminahamed/reclaim/internal/plan"
 	"github.com/mralaminahamed/reclaim/internal/probe"
+	"github.com/mralaminahamed/reclaim/internal/remove"
 	"github.com/mralaminahamed/reclaim/internal/report"
 	"github.com/mralaminahamed/reclaim/internal/runner"
 	"github.com/mralaminahamed/reclaim/internal/scan"
@@ -229,7 +230,7 @@ func cmdClean(args []string) int {
 	// assumption about cost that nobody checked. Now that the size is known,
 	// revisit it: a 2GiB cache is as regenerable as a 2MiB one and nothing
 	// like as cheap.
-	discover.PromoteHeavy(reg, discover.HeavyThreshold)
+	discover.PromoteHeavy(reg, heavyThreshold(os.Getenv))
 	lock.Apply(reg, lock.DefaultRules(home), lock.Running())
 
 	opts := plan.Options{
@@ -304,6 +305,7 @@ func cmdClean(args []string) int {
 	var total int64
 	var ran []*unit.Unit
 	var failed []report.Failure
+	var skipped []remove.Skip
 	for _, res := range results {
 		if *apply {
 			entry := oplog.Entry{At: time.Now(), UnitID: res.Unit.ID, Label: res.Unit.Label,
@@ -313,11 +315,18 @@ func cmdClean(args []string) int {
 			}
 			_ = log.Append(entry)
 		}
+		skipped = append(skipped, res.Skipped...)
 		// A unit that errored is not a unit that reclaimed anything. Counting it
 		// under "Reclaimable" told the user space was freed when none was.
 		if res.Err != nil {
 			failed = append(failed, report.Failure{Unit: res.Unit, Reason: res.Err.Error()})
 			continue
+		}
+		// After --apply each line shows what the unit actually freed, not the
+		// probe's estimate; the total already did, and a line that disagreed
+		// with its own total was the report contradicting itself.
+		if *apply {
+			res.Unit.Bytes = res.Freed
 		}
 		total += res.Freed
 		ran = append(ran, res.Unit)
@@ -329,7 +338,7 @@ func cmdClean(args []string) int {
 	}
 
 	s := report.Summary{
-		Selected: ran, Failed: failed, Locked: locked, Withheld: withheld, OptIn: optIn,
+		Selected: ran, Failed: failed, Skipped: skipped, Locked: locked, Withheld: withheld, OptIn: optIn,
 		TotalBytes: total, DryRun: !*apply, StoppedEarly: r.StoppedEarly,
 	}
 	if *jsonOut {
@@ -477,4 +486,17 @@ func cmdHistory(args []string) int {
 		}
 	}
 	return 0
+}
+
+// heavyThreshold is the size above which a discovered cache needs --heavy.
+// RECLAIM_HEAVY_THRESHOLD may lower it and never raise it: lowering holds more
+// caches back, raising would let a default run reach a bigger one, and nothing
+// in the environment may widen what a run deletes. The tests use it to make a
+// "huge" cache out of megabytes rather than allocating gigabytes.
+func heavyThreshold(getenv func(string) string) int64 {
+	n, err := fsutil.ParseSize(getenv("RECLAIM_HEAVY_THRESHOLD"))
+	if err != nil || n <= 0 || n > discover.HeavyThreshold {
+		return discover.HeavyThreshold
+	}
+	return n
 }

@@ -56,23 +56,19 @@ func measure(u *unit.Unit) {
 		// the files it is going to free. Missing ones contribute nothing:
 		// PathBytes reports 0 for a path that is not there, and a unit may
 		// name files that only some of its targets own.
+		var sized []string
 		for _, p := range u.SizePaths {
 			// Through Targets, so an age bound narrows the measurement the
 			// same way it narrows what the command will take.
-			for _, t := range u.Targets(p) {
-				n, err := fsutil.PathBytes(t)
-				if err != nil {
-					continue
-				}
-				u.Bytes += n
-			}
+			sized = append(sized, u.Targets(p)...)
 		}
+		u.Bytes += fsutil.Measure(sized).Allocated
 		u.Bytes = max(u.Bytes-u.SizeKeep, 0)
 		u.Mount = fsutil.MountOf(mountHint(u))
 		return
 	}
 
-	var total int64
+	var targets []string
 	for _, p := range u.Paths {
 		if p == "" {
 			continue
@@ -80,18 +76,15 @@ func measure(u *unit.Unit) {
 		if u.Mount == "" {
 			u.Mount = fsutil.MountOf(p)
 		}
-		for _, t := range u.Targets(p) {
-			n, err := fsutil.PathBytes(t)
-			if err != nil {
-				continue
-			}
-			total += n
-		}
+		targets = append(targets, u.Targets(p)...)
 	}
 	if u.Mount == "" {
 		u.Mount = fsutil.MountOf(mountHint(u))
 	}
-	u.Bytes = total
+	// Measured together, so a file hard-linked between two of the unit's own
+	// targets is credited once rather than claimed by neither.
+	m := fsutil.Measure(targets)
+	u.Bytes, u.Shared, u.Apparent, u.Unreadable = m.Allocated, m.Shared, m.Apparent, m.Unreadable
 }
 
 func mountHint(u *unit.Unit) string {

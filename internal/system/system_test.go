@@ -119,9 +119,6 @@ func TestTimeMachineThinningIsLossyAndMeasuredAfterTheFact(t *testing.T) {
 	if u.Flag != "--timemachine" {
 		t.Errorf("flag = %q, want --timemachine", u.Flag)
 	}
-	if !u.MeasureFreed {
-		t.Error("want MeasureFreed: nothing on disk states thinning's yield in advance")
-	}
 	if len(u.Detail) != 1 || !contains(u.Detail[0], "1 local snapshot") {
 		t.Errorf("detail %v does not name the current snapshot count", u.Detail)
 	}

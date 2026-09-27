@@ -61,5 +61,7 @@ complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l older -r -d 'day
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l apps -d 'also report applications unused for a long time'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l idle -r -d 'days unused before an app is reported'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l json -d 'machine-readable output'
-complete -c reclaim -n '__fish_seen_subcommand_from analyze' -s n -r -d 'how many entries'
 complete -c reclaim -n '__fish_seen_subcommand_from history' -s n -r -d 'how many entries'
+complete -c reclaim -n '__fish_seen_subcommand_from index' -l full -d 're-read every directory instead of only changed ones'
+complete -c reclaim -n '__fish_seen_subcommand_from index' -l root -r -d 'index only this directory'
+complete -c reclaim -n '__fish_seen_subcommand_from index' -l workers -r -d 'parallel walkers'

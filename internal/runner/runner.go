@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mralaminahamed/reclaim/internal/fsutil"
+	"github.com/mralaminahamed/reclaim/internal/remove"
 	"github.com/mralaminahamed/reclaim/internal/unit"
 )
 
@@ -25,6 +26,9 @@ type Result struct {
 	// which deletes its own data by its own rules -- naming that unit's paths
 	// would be inventing a record of something this code did not do.
 	Removed []string
+	// Skipped lists entries deliberately left in place -- mount points,
+	// directories re-populated mid-run. They are not failures.
+	Skipped []remove.Skip
 }
 
 // Runner executes units in order.
@@ -45,6 +49,9 @@ type Runner struct {
 	// RootCheck acquires elevated privileges, once per run, before any unit
 	// that needs them. Injectable so the skip path is testable without sudo.
 	RootCheck func() error
+	// remove deletes one target; injectable so skip and refusal paths are
+	// testable without constructing the filesystem states that cause them.
+	remove func(string) remove.Outcome
 
 	// StoppedEarly records that the target was met before the plan ran out.
 	StoppedEarly bool
@@ -77,8 +84,8 @@ func (r *Runner) ensureRoot() error {
 func (r *Runner) Run(units []*unit.Unit) []Result {
 	var out []Result
 	for _, u := range units {
-		freed, removed, err := r.runOne(u)
-		out = append(out, Result{Unit: u, Freed: freed, Err: err, Removed: removed})
+		freed, removed, skipped, err := r.runOne(u)
+		out = append(out, Result{Unit: u, Freed: freed, Err: err, Removed: removed, Skipped: skipped})
 
 		if r.TargetBytes > 0 && r.targetMet() {
 			r.StoppedEarly = true
@@ -104,33 +111,36 @@ func (r *Runner) targetMet() bool {
 	return n >= r.TargetBytes
 }
 
-func (r *Runner) runOne(u *unit.Unit) (int64, []string, error) {
+func (r *Runner) runOne(u *unit.Unit) (int64, []string, []remove.Skip, error) {
 	if u.Kind == unit.KindCmd {
 		if !r.Apply {
-			return u.Bytes, nil, nil
+			return u.Bytes, nil, nil, nil
 		}
 		// Ask for elevation before running, so a missing password is reported
 		// as exactly that rather than as an unexplained non-zero exit.
 		if u.NeedsRoot {
 			if err := r.ensureRoot(); err != nil {
-				return 0, nil, fmt.Errorf("needs root: %w", err)
+				return 0, nil, nil, fmt.Errorf("needs root: %w", err)
 			}
 		}
 		run := r.Exec
 		if run == nil {
 			run = shellRun
 		}
-		if u.MeasureFreed {
-			return r.runMeasured(u, run)
-		}
-		if err := run(u.Command); err != nil {
-			return 0, nil, err
-		}
-		return u.Bytes, nil, nil
+		// Every command is measured by what free space did. Its own estimate
+		// is a guess made before it ran; the delta is what happened.
+		freed, removed, err := r.runMeasured(u, run)
+		return freed, removed, nil, err
 	}
 
+	rm := r.remove
+	if rm == nil {
+		rm = remove.Tree
+	}
 	var freed int64
 	var removed []string
+	var skipped []remove.Skip
+	var planned []string
 	for _, p := range u.Paths {
 		if p == "" {
 			continue
@@ -139,50 +149,71 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, error) {
 		// unit aimed at a protected directory must be refused even though the
 		// entries inside it would pass the depth rule on their own.
 		if err := checkSafe(p); err != nil {
-			return freed, removed, err
+			return freed, removed, skipped, err
 		}
 		for _, t := range u.Targets(p) {
 			if err := checkSafe(t); err != nil {
-				return freed, removed, err
+				return freed, removed, skipped, err
 			}
-			n, _ := fsutil.PathBytes(t)
 			if !r.Apply {
-				freed += n
+				planned = append(planned, t)
 				continue
 			}
-			if err := removeAll(t); err != nil {
-				return freed, removed, err
+			// Checked again against what the path resolves to, at the moment
+			// of deletion: a symlinked component can make a harmless-looking
+			// path land in a protected directory.
+			if err := checkResolved(t); err != nil {
+				return freed, removed, skipped, err
 			}
-			freed += n
-			removed = append(removed, t)
+			before := fsutil.Measure([]string{t}).Allocated
+			out := rm(t)
+			after := fsutil.Measure([]string{t}).Allocated
+			freed += max(before-after, 0)
+			skipped = append(skipped, out.Skipped...)
+			if out.Gone {
+				removed = append(removed, t)
+			}
+			if out.Err != nil {
+				return freed, removed, skipped, out.Err
+			}
 		}
 	}
-	return freed, removed, nil
+	if !r.Apply {
+		// Measured together, as probe measures the unit, so a file linked
+		// between two of its targets counts once rather than not at all.
+		freed = fsutil.Measure(planned).Allocated
+	}
+	return freed, removed, skipped, nil
 }
 
-// runMeasured runs a command whose yield cannot be known from anything on
-// disk, and reports what actually freed rather than an estimate: free space on
-// the unit's mount, before and after. A command that fails partway can still
-// have freed something, so the delta is measured either way and only the
-// error is what makes the run count as failed.
+// runMeasured runs a command and reports what free space did around it,
+// because nothing on disk can say in advance what a tool's own cleanup will
+// remove. The figure is taken on the mount probe resolved for the unit. A
+// failed command reports nothing freed. If free space cannot be read on
+// either side the unit's estimate is returned instead, and the unit is not
+// marked Measured -- "after minus nothing" would be the whole disk.
 func (r *Runner) runMeasured(u *unit.Unit, run func(string) error) (int64, []string, error) {
 	avail := r.Avail
 	if avail == nil {
 		avail = fsutil.AvailBytes
 	}
-	mount := u.MountHint
+	mount := u.Mount
 	if mount == "" {
-		mount = "/"
+		mount = u.MountHint
 	}
-	before, _ := avail(mount)
+	if mount == "" {
+		mount, _ = os.UserHomeDir()
+	}
+	before, beforeErr := avail(mount)
 	err := run(u.Command)
-	after, availErr := avail(mount)
+	after, afterErr := avail(mount)
 	if err != nil {
 		return 0, nil, err
 	}
-	if availErr != nil {
+	if beforeErr != nil || afterErr != nil {
 		return u.Bytes, nil, nil
 	}
+	u.Measured = true
 	return max(after-before, 0), nil, nil
 }
 
@@ -229,6 +260,31 @@ func checkSafe(p string) error {
 		home = ""
 	}
 	return CheckSafe(p, home)
+}
+
+// checkResolved applies CheckSafe to p with its parent's symlinks resolved,
+// against home with its symlinks resolved too: when $HOME is itself a link,
+// the real home directory must not pass for an ordinary path. The base name
+// is kept as is -- a final-component link is removed, not followed.
+//
+// A parent that is simply gone is fine: so is p, and there is nothing to
+// delete. Any other failure to resolve is not evidence of safety.
+func checkResolved(p string) error {
+	parent, err := filepath.EvalSymlinks(filepath.Dir(p))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("refusing %q: cannot resolve its parent: %w", p, err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
+	if real, err := filepath.EvalSymlinks(home); err == nil {
+		home = real
+	}
+	return CheckSafe(filepath.Join(parent, filepath.Base(p)), home)
 }
 
 // shellRun executes a unit's command, folding its output into any error.
