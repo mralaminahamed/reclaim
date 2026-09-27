@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mralaminahamed/reclaim/internal/discover"
 	th "github.com/mralaminahamed/reclaim/internal/testharness"
@@ -218,5 +221,52 @@ func TestScenarioSparseFileIsSizedByWhatItOccupies(t *testing.T) {
 	}
 	if len(out.Units) != 1 || out.Units[0].Bytes >= 1<<20 {
 		t.Errorf("units = %+v, want pip-cache sized near zero for a sparse file", out.Units)
+	}
+}
+
+// A WordPress plugin that commits vendor/ must survive even a run that has
+// opted in to lossy idle-project cleanup; one that ignores vendor/ gives it up.
+func TestScenarioCommittedVendorSurvivesIdleCleanup(t *testing.T) {
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	s := th.New(t, bin)
+	// Real git behind a stub, so the sandbox still logs the call.
+	s.Stub("git", `exec `+gitBin+` -c user.email=t@t -c user.name=t -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"`)
+	shipped := filepath.Join("home/Sites/site/wp-content/plugins/shipped")
+	ignored := filepath.Join("home/Sites/site/wp-content/plugins/ignored")
+	s.Build(
+		th.Entry{Path: shipped + "/composer.json", Kind: th.File, Size: 10},
+		th.Entry{Path: shipped + "/vendor/autoload.php", Kind: th.File, Size: 4096, Protected: true},
+		th.Entry{Path: ignored + "/composer.json", Kind: th.File, Size: 10},
+		th.Entry{Path: ignored + "/.gitignore", Kind: th.File, Size: 0},
+	)
+	os.WriteFile(filepath.Join(s.Root, ignored, ".gitignore"), []byte("/vendor/\n"), 0o644)
+	sh := func(dir, script string) {
+		cmd := exec.Command("/bin/sh", "-c", script)
+		cmd.Dir, cmd.Env = filepath.Join(s.Root, dir), s.Env()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s: %v\n%s", script, err, out)
+		}
+	}
+	sh(shipped, "git init -q && git add . && git commit -qm ship")
+	sh(ignored, "git init -q && git add . && git commit -qm init")
+	s.Build(th.Entry{Path: ignored + "/vendor/autoload.php", Kind: th.File, Size: 4096})
+	when := time.Now().Add(-400 * 24 * time.Hour)
+	filepath.WalkDir(filepath.Join(s.Home, "Sites"), func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			os.Chtimes(p, when, when)
+		}
+		return nil
+	})
+
+	r := s.Apply("clean", "--apply", "--yes", "--sites-idle", "30", "--allow-lossy", "--only", "idle-*")
+
+	if r.Code != 0 {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+	if _, err := os.Stat(filepath.Join(s.Root, ignored, "vendor")); !os.IsNotExist(err) {
+		t.Errorf("the ignored vendor/ survived:\n%s", r.Out)
 	}
 }

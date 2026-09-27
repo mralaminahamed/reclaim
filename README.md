@@ -279,6 +279,24 @@ manifest that proves what produced it, because `build`, `target`, `obj` and
 somebody's source. Idleness is judged from a project's own files, never from its
 build output.
 
+Projects are found up to six levels below `--sites-root`, so a plugin inside
+`Sites/<site>/wp-content/plugins/` is a project of its own. Hidden directories
+and symlinks are not entered.
+
+A manifest proves the shape, not that the directory can be regenerated: a
+WordPress plugin commits `vendor/` so it ships working. So inside a git
+repository a directory is claimed only when git vouches for it -- nothing under
+it is tracked (`git ls-files`) and the repository ignores it
+(`git check-ignore`). If git cannot answer, the directory is left alone. `dist`
+is claimed only this way; outside a repository there is no telling. A
+dependency directory that is a repository itself, or a Rust `target/` holding
+Anchor's `deploy/*-keypair.json`, is never claimed.
+
+A directory inside an idle project that carries a valid
+[`CACHEDIR.TAG`](https://bford.info/cachedir/) is claimed whatever its name, as
+a reversible artifact: the tag is the directory's own statement that it can be
+regenerated. A committed one contradicts its tag and is left alone.
+
 ### The index
 
 ```bash
