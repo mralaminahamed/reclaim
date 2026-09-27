@@ -174,3 +174,27 @@ func TestXDGCachesNeverClaimsReclaimsOwnDirectory(t *testing.T) {
 		t.Error("other caches must still be claimed")
 	}
 }
+
+// A label names where the unit is. ".cache/x" is only true of ~/.cache; a
+// relocated cache home, or ~/Library/Caches, is shown by its real path.
+func TestXDGCacheLabelNamesTheRealRoot(t *testing.T) {
+	for _, root := range []string{filepath.Join(t.TempDir(), ".cache"), filepath.Join(t.TempDir(), "elsewhere")} {
+		d := filepath.Join(root, "thing")
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		r := unit.NewRegistry()
+		XDGCaches(r, root)
+		u, ok := r.Get("xdg-thing")
+		if !ok {
+			t.Fatal("not claimed")
+		}
+		want := d
+		if filepath.Base(root) == ".cache" {
+			want = ".cache/thing"
+		}
+		if u.Label != want {
+			t.Errorf("root %s: label %q, want %q", root, u.Label, want)
+		}
+	}
+}

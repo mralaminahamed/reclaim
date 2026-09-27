@@ -42,3 +42,35 @@ func TestNestedRootsCoverThePlatformsApplicationState(t *testing.T) {
 	}
 	t.Fatalf("roots %v do not include %q", got, want)
 }
+
+// A relocated cache home is where the tools write, so it is what the sweep
+// walks. On macOS the cache root is ~/Library/Caches, which the variable does
+// not move.
+func TestCacheRootFollowsXDGCacheHome(t *testing.T) {
+	home, xdg := t.TempDir(), t.TempDir()
+	got := CacheRootFrom(home, func(k string) string {
+		if k == "XDG_CACHE_HOME" {
+			return xdg
+		}
+		return ""
+	})
+	want := xdg
+	if runtime.GOOS == "darwin" {
+		want = CacheRoot(home)
+	}
+	if got != want {
+		t.Fatalf("cache root %q, want %q", got, want)
+	}
+}
+
+// Unset, relative, or aimed at something the sweep must never treat as a
+// cache root: the default stands.
+func TestCacheRootIgnoresUnusableXDGCacheHome(t *testing.T) {
+	home := t.TempDir()
+	for _, v := range []string{"", "rel/cache", "/", home, "/usr"} {
+		got := CacheRootFrom(home, func(string) string { return v })
+		if got != CacheRoot(home) {
+			t.Errorf("XDG_CACHE_HOME=%q: root %q, want the default", v, got)
+		}
+	}
+}

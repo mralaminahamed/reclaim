@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mralaminahamed/reclaim/internal/runner"
 	"github.com/mralaminahamed/reclaim/internal/unit"
 )
 
@@ -27,6 +28,9 @@ type Env struct {
 	// container unit is not offered: what cannot be listed cannot be
 	// previewed.
 	Docker func() (DockerState, error)
+	// Getenv reads the environment, where tools are told their caches have
+	// moved. Nil reads as an empty environment.
+	Getenv func(string) string
 }
 
 // DefaultEnv returns an Env describing this machine.
@@ -34,7 +38,7 @@ func DefaultEnv(home string) Env {
 	return Env{Home: home, Has: func(bin string) bool {
 		_, err := exec.LookPath(bin)
 		return err == nil
-	}, Docker: dockerState}
+	}, Docker: dockerState, Getenv: os.Getenv}
 }
 
 type builder struct {
@@ -143,10 +147,11 @@ func Build(env Env) *unit.Registry {
 	// the catalog prefers "npm cache clean" to deleting the directory: the tool
 	// knows which parts are dead and we do not.
 	b.cmdAt("hf-prune", "huggingface prune", "hf", "hf cache prune", unit.TierPkgCache)
-	b.paths("hf-cache", "huggingface models", unit.TierColdReload, true, "--models",
-		".cache/huggingface")
-	b.paths("torch-hub", "torch checkpoints", unit.TierColdReload, true, "--models",
-		".cache/torch")
+	b.pathsAt("hf-cache", "huggingface models", unit.TierColdReload, true, "--models",
+		append(b.under(".cache/huggingface"),
+			b.dir("HF_HOME"), b.dir("HF_HUB_CACHE"), b.dir("HUGGINGFACE_HUB_CACHE"))...)
+	b.pathsAt("torch-hub", "torch checkpoints", unit.TierColdReload, true, "--models",
+		append(b.under(".cache/torch"), b.dir("TORCH_HOME"))...)
 	b.paths("whisper-models", "whisper weights", unit.TierColdReload, true, "--models",
 		".cache/whisper")
 	b.paths("lmstudio-models", "LM Studio models", unit.TierColdReload, true, "--models",
@@ -310,13 +315,53 @@ func (b *builder) appCaches(id, label, flag, root string) {
 
 // paths registers a path unit, keeping only the paths that exist here.
 func (b *builder) paths(id, label string, tier unit.Tier, reversible bool, flag string, rel ...string) {
-	var present []string
+	var abs []string
 	for _, x := range rel {
-		p := filepath.Join(b.env.Home, x)
-		if exists(p) {
-			present = append(present, p)
+		abs = append(abs, b.under(x)...)
+	}
+	b.pathsAt(id, label, tier, reversible, flag, abs...)
+}
+
+// under resolves a path relative to home. One under ~/.cache also resolves
+// under $XDG_CACHE_HOME when that is set: tools that honour it write there,
+// and those that do not still write to the default, so both are candidates.
+func (b *builder) under(rel string) []string {
+	out := []string{filepath.Join(b.env.Home, rel)}
+	if rest, ok := strings.CutPrefix(rel, ".cache/"); ok {
+		if xdg := b.dir("XDG_CACHE_HOME"); xdg != "" {
+			out = append(out, filepath.Join(xdg, rest))
 		}
 	}
+	return out
+}
+
+// dir reads a directory from the environment. Unset or relative reads as
+// empty: the XDG spec calls a relative value invalid, and a relative path
+// would be resolved against wherever reclaim happened to be run.
+func (b *builder) dir(key string) string {
+	if b.env.Getenv == nil {
+		return ""
+	}
+	v := b.env.Getenv(key)
+	if !filepath.IsAbs(v) {
+		return ""
+	}
+	return filepath.Clean(v)
+}
+
+// pathsAt registers a unit over whichever of the absolute candidates exist.
+// A candidate the runner would refuse -- an environment variable aimed at
+// home or at / -- is dropped here, so it is never offered at all, and one
+// inside another candidate is dropped as already covered.
+func (b *builder) pathsAt(id, label string, tier unit.Tier, reversible bool, flag string, abs ...string) {
+	var present []string
+	for _, p := range abs {
+		if p == "" || !exists(p) || runner.CheckSafe(p, b.env.Home) != nil {
+			continue
+		}
+		present = append(present, filepath.Clean(p))
+	}
+	present = outermost(present)
 	if len(present) == 0 {
 		return
 	}
@@ -331,6 +376,24 @@ func (b *builder) lru(ids ...string) {
 			u.LRU = true
 		}
 	}
+}
+
+// outermost drops duplicates and any path inside another, keeping order.
+func outermost(ps []string) []string {
+	var out []string
+	for i, p := range ps {
+		covered := false
+		for j, q := range ps {
+			if p == q && j < i || p != q && strings.HasPrefix(p, q+string(filepath.Separator)) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // jetbrainsVersion matches a per-version directory: "RustRover2025.3".
