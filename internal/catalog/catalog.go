@@ -48,14 +48,21 @@ func Build(env Env) *unit.Registry {
 
 	// Tier 0: a package manager's own cache-clean command. Safer than any rm we
 	// could write, because the tool knows its own layout.
-	b.cmd("npm-native", "npm cache clean", "npm", "npm cache clean --force")
+	//
+	// Where a tool can trim -- drop only what nothing uses any more -- the trim
+	// is the free unit and the wipe costs a re-download of everything still in
+	// use, so it sits a tier up. A run aimed at a target then stops at the
+	// trim when the trim is enough.
+	b.cmd("npm-verify", "npm cache verify", "npm", "npm cache verify")
+	b.cmd("uv-prune", "uv cache prune", "uv", "uv cache prune")
+	b.cmdAt("npm-native", "npm cache clean", "npm", "npm cache clean --force", unit.TierPkgCache)
 	b.cmd("pnpm-native", "pnpm store prune", "pnpm", "pnpm store prune")
 	b.cmd("yarn-native", "yarn cache clean", "yarn", "yarn cache clean")
 	b.cmd("bun-native", "bun cache rm", "bun", "bun pm cache rm")
 	b.cmd("go-native", "go clean -cache", "go", "go clean -cache -modcache")
 	b.cmd("composer-native", "composer clear-cache", "composer", "composer clear-cache")
 	b.cmd("pip-native", "pip cache purge", "pip", "pip cache purge")
-	b.cmd("uv-native", "uv cache clean", "uv", "uv cache clean")
+	b.cmdAt("uv-native", "uv cache clean", "uv", "uv cache clean", unit.TierPkgCache)
 	// --prune=all discards every cached download rather than only those older
 	// than the default 120 days. All of them are re-downloadable, which is the
 	// whole distinction this tool draws.
@@ -104,6 +111,11 @@ func Build(env Env) *unit.Registry {
 		".cache/uv", "Library/Caches/uv")
 	b.paths("pip-cache", "pip cache", unit.TierPkgCache, true, "",
 		".cache/pip", "Library/Caches/pip")
+	// Caches of standalone files: content-addressed, each file a miss when it
+	// is absent and never half of an unpacked package. Under a free-space
+	// target these give up their least recently used files first. Module
+	// caches, registries and extracted archives are not among them.
+	b.lru("go-build", "pip-cache", "npm-cacache", "thumbnails")
 	b.paths("cargo-cache", "cargo registry", unit.TierPkgCache, true, "",
 		".cargo/registry/cache", ".cargo/registry/src")
 	b.paths("deno-cache", "deno cache", unit.TierPkgCache, true, "",
@@ -310,6 +322,15 @@ func (b *builder) paths(id, label string, tier unit.Tier, reversible bool, flag 
 	}
 	b.r.Add(&unit.Unit{ID: id, Tier: tier, Reversible: reversible, Label: label,
 		Kind: unit.KindPaths, Paths: present, Flag: flag, MountHint: b.env.Home})
+}
+
+// lru marks registered units as trimmable file by file.
+func (b *builder) lru(ids ...string) {
+	for _, id := range ids {
+		if u, ok := b.r.Get(id); ok {
+			u.LRU = true
+		}
+	}
 }
 
 // jetbrainsVersion matches a per-version directory: "RustRover2025.3".
