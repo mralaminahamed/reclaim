@@ -103,6 +103,23 @@ func TestLossyUnitsAreMarkedIrreversible(t *testing.T) {
 	}
 }
 
+// The Claude desktop app keeps its VM bundles under Application Support on
+// macOS, not under .config -- easily the largest thing this unit ever finds,
+// and silently missed entirely without this path too.
+func TestClaudeVMFindsTheMacOSPath(t *testing.T) {
+	home := t.TempDir()
+	mkdir(t, filepath.Join(home, "Library/Application Support/Claude/vm_bundles"))
+	r := Build(Env{Home: home, Has: func(string) bool { return false }})
+
+	u, ok := r.Get("claude-vm")
+	if !ok {
+		t.Fatal("claude-vm missing though the macOS path exists")
+	}
+	if len(u.Paths) != 1 || !strings.Contains(u.Paths[0], "Application Support") {
+		t.Errorf("paths = %v, want the Application Support path", u.Paths)
+	}
+}
+
 func TestNoUnitTargetsAProtectedDirectory(t *testing.T) {
 	// A catalog entry that names $HOME or a system directory would be caught by
 	// the runner's backstop, but it should never get that far.

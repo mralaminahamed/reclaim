@@ -248,8 +248,11 @@ func Build(env Env) *unit.Registry {
 		"--claude-history", ".claude/projects")
 
 	// Tier 5: may destroy the only copy. Never reached by escalation alone.
+	// The Claude desktop app keeps its VM bundles under Application Support on
+	// macOS, not under .config -- easily the largest single thing this ever
+	// finds there, and silently missed entirely without this second path.
 	b.paths("claude-vm", "Claude VM bundles", unit.TierIrreplaceable, false, "--claude-vm",
-		".config/Claude/vm_bundles")
+		".config/Claude/vm_bundles", "Library/Application Support/Claude/vm_bundles")
 
 	// Flatpak. Each app pins the runtime version it was built against, so as
 	// apps update the old runtimes are left behind unreferenced at 1-2GiB
