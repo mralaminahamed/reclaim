@@ -451,7 +451,8 @@ declared in `~/.config/reclaim/units.json`, or dropped into
       "label": "ccache objects",
       "tier": 1,
       "reversible": true,
-      "paths": [".cache/ccache"]
+      "paths": [".cache/ccache"],
+      "lru": true
     },
     {
       "id": "conda-pkgs",
@@ -469,7 +470,10 @@ declared in `~/.config/reclaim/units.json`, or dropped into
 rests on, and defaulting either would let an omission make a promise the author
 never made. Relative paths resolve under `$HOME`; `requires` drops the unit on
 machines without that binary; `flag` makes it opt-in, named as `--with <name>`
-since a file cannot register a CLI flag.
+since a file cannot register a CLI flag. `lru` marks a path unit whose files
+stand alone (content-addressed, each one a miss when absent), so a `--free` or
+`--auto` target trims it least recently used first. It is refused on a command
+unit.
 
 A file **adds** to the catalog and can never restate it — the shipped definition
 of a unit id always wins. Definitions go through the same protected-path

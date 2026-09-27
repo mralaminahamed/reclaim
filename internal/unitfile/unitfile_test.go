@@ -155,3 +155,24 @@ func TestParseRefusesTheHomeDirectoryItself(t *testing.T) {
 func TestParseRefusesAPathThatClimbsOutOfHome(t *testing.T) {
 	parseErr(t, "/home/u", `{"units":[{"id":"x","tier":1,"reversible":true,"paths":["../.."]}]}`)
 }
+
+// Whoever writes the definition knows whether the cache's files stand alone.
+// "lru" lets them say so, and a --free target then trims it oldest first.
+func TestParseReadsLRU(t *testing.T) {
+	us := parse(t, "/home/u", `{"units":[
+		{"id":"ccache","tier":1,"reversible":true,"paths":[".ccache"],"lru":true},
+		{"id":"plain","tier":1,"reversible":true,"paths":[".plain"]}]}`)
+	if !us[0].LRU || us[1].LRU {
+		t.Errorf("LRU = %v, %v; want true, false", us[0].LRU, us[1].LRU)
+	}
+}
+
+// A command deletes by its own rules; there are no files for reclaim to
+// order. Saying otherwise is a mistake worth stopping on.
+func TestParseRefusesLRUOnACommand(t *testing.T) {
+	msg := parseErr(t, "/home/u", `{"units":[
+		{"id":"c","tier":0,"reversible":true,"command":"true","lru":true}]}`)
+	if !strings.Contains(msg, "c:") || !strings.Contains(msg, "lru") {
+		t.Errorf("error %q, want it to name the unit and lru", msg)
+	}
+}
