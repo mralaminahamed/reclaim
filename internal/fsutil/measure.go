@@ -9,8 +9,9 @@ import (
 // Usage is what a set of paths occupies.
 //
 // Allocated is the number that matters: blocks actually held on disk, which
-// is what deleting gives back. Apparent is the sum of file lengths, kept for
-// comparison. A sparse file has a large Apparent and a tiny Allocated.
+// is what deleting gives back. Apparent is the sum of the lengths of the same
+// files, kept for comparison. A sparse file has a large Apparent and a tiny
+// Allocated.
 //
 // Shared is allocated space held by files hard-linked from outside the
 // measured set. Deleting the set does not free it -- the other link keeps the
@@ -29,7 +30,7 @@ var listMounts = MountPoints
 
 type linked struct {
 	seen, nlink uint64
-	bytes       int64
+	bytes, size int64
 }
 
 // Measure walks every path, never following symlinks and never leaving the
@@ -98,9 +99,8 @@ func Measure(paths []string) Usage {
 			k := inode{st.dev, st.ino}
 			l := links[k]
 			if l == nil {
-				l = &linked{nlink: st.nlink, bytes: alloc}
+				l = &linked{nlink: st.nlink, bytes: alloc, size: fi.Size()}
 				links[k] = l
-				u.Apparent += fi.Size()
 			}
 			l.seen++
 			return nil
@@ -109,6 +109,7 @@ func Measure(paths []string) Usage {
 	for _, l := range links {
 		if l.seen >= l.nlink {
 			u.Allocated += l.bytes
+			u.Apparent += l.size
 		} else {
 			u.Shared += l.bytes
 		}

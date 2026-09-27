@@ -63,6 +63,11 @@ func TestMeasureCreditsHardlinksOnlyWhenAllLinksAreInside(t *testing.T) {
 	if alone.Allocated != 0 {
 		t.Errorf("store alone: Allocated = %d, want 0 (its only file is linked elsewhere)", alone.Allocated)
 	}
+	// Apparent describes the same set of files as Allocated: what deleting
+	// would free. A shared file is in neither.
+	if alone.Apparent != 0 {
+		t.Errorf("store alone: Apparent = %d, want 0 like Allocated", alone.Apparent)
+	}
 	if alone.Shared < 64<<10 {
 		t.Errorf("store alone: Shared = %d, want the linked file", alone.Shared)
 	}

@@ -51,7 +51,7 @@ func TestProbeRecordsSharedAndApparentSizes(t *testing.T) {
 	All(r, 1)
 
 	u, _ := r.Get("store")
-	if u.Shared < 64<<10 || u.Apparent != 64<<10 {
-		t.Errorf("Shared = %d Apparent = %d, want the linked file in both", u.Shared, u.Apparent)
+	if u.Shared < 64<<10 || u.Apparent != 0 {
+		t.Errorf("Shared = %d Apparent = %d, want the linked file shared and not in Apparent", u.Shared, u.Apparent)
 	}
 }

@@ -140,6 +140,7 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, []remove.Skip, error) {
 	var freed int64
 	var removed []string
 	var skipped []remove.Skip
+	var planned []string
 	for _, p := range u.Paths {
 		if p == "" {
 			continue
@@ -155,7 +156,7 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, []remove.Skip, error) {
 				return freed, removed, skipped, err
 			}
 			if !r.Apply {
-				freed += fsutil.Measure([]string{t}).Allocated
+				planned = append(planned, t)
 				continue
 			}
 			// Checked again against what the path resolves to, at the moment
@@ -176,6 +177,11 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, []remove.Skip, error) {
 				return freed, removed, skipped, out.Err
 			}
 		}
+	}
+	if !r.Apply {
+		// Measured together, as probe measures the unit, so a file linked
+		// between two of its targets counts once rather than not at all.
+		freed = fsutil.Measure(planned).Allocated
 	}
 	return freed, removed, skipped, nil
 }
@@ -256,15 +262,29 @@ func checkSafe(p string) error {
 	return CheckSafe(p, home)
 }
 
-// checkResolved applies CheckSafe to p with its parent's symlinks resolved.
-// The base name is kept as is: a final-component link is removed, not
-// followed, so where it points does not matter.
+// checkResolved applies CheckSafe to p with its parent's symlinks resolved,
+// against home with its symlinks resolved too: when $HOME is itself a link,
+// the real home directory must not pass for an ordinary path. The base name
+// is kept as is -- a final-component link is removed, not followed.
+//
+// A parent that is simply gone is fine: so is p, and there is nothing to
+// delete. Any other failure to resolve is not evidence of safety.
 func checkResolved(p string) error {
 	parent, err := filepath.EvalSymlinks(filepath.Dir(p))
-	if err != nil {
-		return nil //nolint:nilerr // nothing to resolve: the parent is gone, so is p
+	if os.IsNotExist(err) {
+		return nil
 	}
-	return checkSafe(filepath.Join(parent, filepath.Base(p)))
+	if err != nil {
+		return fmt.Errorf("refusing %q: cannot resolve its parent: %w", p, err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
+	if real, err := filepath.EvalSymlinks(home); err == nil {
+		home = real
+	}
+	return CheckSafe(filepath.Join(parent, filepath.Base(p)), home)
 }
 
 // shellRun executes a unit's command, folding its output into any error.

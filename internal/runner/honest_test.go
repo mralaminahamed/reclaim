@@ -154,3 +154,68 @@ func TestAMeasuredDeltaIsLabelled(t *testing.T) {
 		t.Error("a measured delta was not labelled measured")
 	}
 }
+
+// With $HOME itself a symlink, a path that resolves to the real home directory
+// did not compare equal to $HOME and slipped past the home check.
+func TestResolvedHomeIsRefusedWhenHomeIsALink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "realhome")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "homelink")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", link)
+	called := false
+	u := &unit.Unit{ID: "u", Kind: unit.KindPaths, Paths: []string{real}}
+	r := &Runner{Apply: true, remove: func(string) remove.Outcome { called = true; return remove.Outcome{Gone: true} }}
+
+	res := r.Run([]*unit.Unit{u})[0]
+
+	if res.Err == nil || called {
+		t.Fatalf("Err = %v, removal called = %v; the real home must be refused", res.Err, called)
+	}
+}
+
+// A parent that cannot be resolved for any reason other than being gone is
+// not evidence the path is safe.
+func TestUnresolvableParentIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	loop := filepath.Join(dir, "loop")
+	if err := os.Symlink(loop, loop); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	u := &unit.Unit{ID: "u", Kind: unit.KindPaths, Paths: []string{filepath.Join(loop, "x")}}
+	r := &Runner{Apply: true, remove: func(string) remove.Outcome { called = true; return remove.Outcome{Gone: true} }}
+
+	res := r.Run([]*unit.Unit{u})[0]
+
+	if res.Err == nil || called {
+		t.Fatalf("Err = %v, removal called = %v; want refusal", res.Err, called)
+	}
+}
+
+// A dry run must agree with probe: a file hard-linked between two of a unit's
+// own targets is freed by the unit, so it counts once, not zero times.
+func TestDryRunCreditsLinksBetweenTargets(t *testing.T) {
+	root := t.TempDir()
+	a, b := filepath.Join(root, "a"), filepath.Join(root, "b")
+	os.MkdirAll(a, 0o755)
+	os.MkdirAll(b, 0o755)
+	if err := os.WriteFile(filepath.Join(a, "f"), make([]byte, 64<<10), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(filepath.Join(a, "f"), filepath.Join(b, "f")); err != nil {
+		t.Fatal(err)
+	}
+	u := &unit.Unit{ID: "u", Kind: unit.KindPaths, Paths: []string{a, b}}
+
+	res := (&Runner{}).Run([]*unit.Unit{u})[0]
+
+	if res.Freed < 64<<10 {
+		t.Errorf("dry-run Freed = %d, want the linked file counted once", res.Freed)
+	}
+}
