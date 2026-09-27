@@ -60,14 +60,18 @@ func IsCacheName(name string) bool {
 // OwnCacheDir is reclaim's own directory under the cache root.
 const OwnCacheDir = "reclaim"
 
+// keepWhole names directories under the cache root that are not disposable
+// whole. Our own holds the index: regenerable, but deleting it discards the
+// thing that makes the next analyze instant. Hugging Face's holds the login
+// beside the downloads; the catalog claims the downloads alone.
+var keepWhole = map[string]bool{OwnCacheDir: true, "huggingface": true}
+
 // XDGCaches claims every directory directly inside the XDG cache root that no
 // registered unit already owns.
 func XDGCaches(r *unit.Registry, cacheRoot string) {
 	for _, d := range subdirs(cacheRoot) {
 		name := filepath.Base(d)
-		// Our own directory holds the index. Regenerable, but deleting it
-		// discards the thing that makes the next analyze instant.
-		if r.Claimed(d) || name == OwnCacheDir {
+		if r.Claimed(d) || keepWhole[name] {
 			continue
 		}
 		r.Add(&unit.Unit{

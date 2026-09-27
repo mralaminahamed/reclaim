@@ -70,14 +70,14 @@ func TestRelativeXDGCacheHomeIsIgnored(t *testing.T) {
 func TestModelStoresFollowTheirVariables(t *testing.T) {
 	home, disk := t.TempDir(), t.TempDir()
 	hf, hub, torch := filepath.Join(disk, "hf"), filepath.Join(disk, "hub"), filepath.Join(disk, "torch")
-	for _, d := range []string{hf, hub, torch} {
+	for _, d := range []string{filepath.Join(hf, "hub"), hub, torch} {
 		mkdir(t, d)
 	}
 	env := Env{Home: home, Has: func(string) bool { return false },
 		Getenv: envOf(map[string]string{"HF_HOME": hf, "HF_HUB_CACHE": hub, "TORCH_HOME": torch})}
 
-	if got := pathsOf(t, env, "hf-cache"); !has(got, hf) || !has(got, hub) {
-		t.Errorf("hf-cache paths %v, want HF_HOME and HF_HUB_CACHE", got)
+	if got := pathsOf(t, env, "hf-cache"); !has(got, filepath.Join(hf, "hub")) || !has(got, hub) {
+		t.Errorf("hf-cache paths %v, want HF_HOME/hub and HF_HUB_CACHE", got)
 	}
 	if got := pathsOf(t, env, "torch-hub"); !has(got, torch) {
 		t.Errorf("torch-hub paths %v, want TORCH_HOME", got)

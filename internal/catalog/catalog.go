@@ -147,9 +147,7 @@ func Build(env Env) *unit.Registry {
 	// the catalog prefers "npm cache clean" to deleting the directory: the tool
 	// knows which parts are dead and we do not.
 	b.cmdAt("hf-prune", "huggingface prune", "hf", "hf cache prune", unit.TierPkgCache)
-	b.pathsAt("hf-cache", "huggingface models", unit.TierColdReload, true, "--models",
-		append(b.under(".cache/huggingface"),
-			b.dir("HF_HOME"), b.dir("HF_HUB_CACHE"), b.dir("HUGGINGFACE_HUB_CACHE"))...)
+	b.pathsAt("hf-cache", "huggingface models", unit.TierColdReload, true, "--models", b.hfCaches()...)
 	b.pathsAt("torch-hub", "torch checkpoints", unit.TierColdReload, true, "--models",
 		append(b.under(".cache/torch"), b.dir("TORCH_HOME"))...)
 	b.paths("whisper-models", "whisper weights", unit.TierColdReload, true, "--models",
@@ -376,6 +374,27 @@ func (b *builder) lru(ids ...string) {
 			u.LRU = true
 		}
 	}
+}
+
+// hfCaches are the regenerable parts of every Hugging Face home. Never the
+// home itself: it also holds the login -- "token" and "stored_tokens" -- and
+// a token does not come back by downloading it again.
+func (b *builder) hfCaches() []string {
+	homes := append(b.under(".cache/huggingface"), b.dir("HF_HOME"))
+	var out []string
+	for _, h := range homes {
+		if h == "" {
+			continue
+		}
+		for _, sub := range []string{"hub", "xet", "datasets", "assets"} {
+			out = append(out, filepath.Join(h, sub))
+		}
+	}
+	for _, k := range []string{"HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE", "HF_XET_CACHE",
+		"HF_DATASETS_CACHE", "HF_ASSETS_CACHE"} {
+		out = append(out, b.dir(k))
+	}
+	return out
 }
 
 // outermost drops duplicates and any path inside another, keeping order.

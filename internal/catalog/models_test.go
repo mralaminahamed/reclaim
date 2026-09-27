@@ -13,7 +13,7 @@ import (
 // ladder exists to express.
 func TestModelCachesAreColdReloadAndOptIn(t *testing.T) {
 	home := t.TempDir()
-	for _, d := range []string{".cache/huggingface", ".cache/torch", ".cache/whisper",
+	for _, d := range []string{".cache/huggingface/hub", ".cache/torch", ".cache/whisper",
 		".lmstudio/models"} {
 		mkdir(t, filepath.Join(home, d))
 	}
@@ -68,18 +68,26 @@ func TestHuggingfacePruneNeedsTheTool(t *testing.T) {
 	}
 }
 
-// Once the catalog names these, discovery must not claim them a second time.
-// This is the other half of the fix for the flat-tier bug: a hardcoded unit
-// carries a considered tier, and the generic scanner has to defer to it.
-func TestDiscoveryCannotReclaimTheHuggingfaceCache(t *testing.T) {
+// The Hugging Face home holds the login beside the downloads. The unit takes
+// the downloads and never the home, so the token survives --models.
+func TestHuggingfaceUnitNeverClaimsTheHome(t *testing.T) {
 	home := t.TempDir()
-	cache := filepath.Join(home, ".cache/huggingface")
-	mkdir(t, cache)
+	hf := filepath.Join(home, ".cache/huggingface")
+	for _, d := range []string{"hub", "xet", "datasets"} {
+		mkdir(t, filepath.Join(hf, d))
+	}
 
-	r := Build(Env{Home: home, Has: func(string) bool { return false }})
-
-	if !r.Claimed(cache) {
-		t.Fatal("the huggingface cache is unclaimed, so --discover would re-register it")
+	u, ok := Build(Env{Home: home, Has: func(string) bool { return false }}).Get("hf-cache")
+	if !ok {
+		t.Fatal("hf-cache not registered")
+	}
+	if len(u.Paths) != 3 {
+		t.Errorf("paths %v, want hub, xet and datasets", u.Paths)
+	}
+	for _, p := range u.Paths {
+		if p == hf {
+			t.Fatalf("paths %v include the home that holds the token", u.Paths)
+		}
 	}
 }
 

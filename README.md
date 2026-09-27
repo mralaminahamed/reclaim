@@ -266,6 +266,10 @@ separate and unflagged — `hf cache prune` discards only revisions nothing
 references and downloads that never finished, so it costs nothing and leaves
 working models alone.
 
+The Hugging Face home also holds the login (`token`, `stored_tokens`), so
+`--models` takes only its `hub`, `xet`, `datasets` and `assets` directories, and
+`--discover` never claims the home whole.
+
 Stores moved to another disk are found where they were moved. `HF_HOME`,
 `HF_HUB_CACHE` (or the older `HUGGINGFACE_HUB_CACHE`) and `TORCH_HOME` are read
 for the model units. `XDG_CACHE_HOME` moves every `~/.cache` entry in the
