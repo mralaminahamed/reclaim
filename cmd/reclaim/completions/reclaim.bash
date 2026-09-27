@@ -28,7 +28,11 @@ _reclaim() {
             COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
             return
             ;;
-        --free|--below|--tier|--workers|--sites-idle|--sites-root|--min|--older|--idle|-n)
+        --sites-root|--root)
+            COMPREPLY=( $(compgen -d -- "$cur") )
+            return
+            ;;
+        --free|--below|--tier|--workers|--sites-idle|--min|--older|--idle|-n)
             return
             ;;
     esac

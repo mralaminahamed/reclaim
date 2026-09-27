@@ -106,11 +106,24 @@ func section(sh, script, sub string) string {
 			return ""
 		}
 		rest := script[start[1]:]
-		body := rest[:strings.Index(rest, ";;")]
+		end := strings.Index(rest, ";;")
+		if end < 0 {
+			// A layout this parser does not know returns nothing, so every
+			// defined flag is reported missing: loud, never a silent pass.
+			return ""
+		}
+		body := rest[:end]
 		if sh == "zsh" && strings.Contains(body, "$clean_flags") {
 			i := strings.Index(script, "clean_flags=(")
+			if i < 0 {
+				return ""
+			}
 			j := strings.Index(script[i:], "\n    )")
-			return script[i : i+j]
+			if j < 0 {
+				return ""
+			}
+			// The array and anything written inline beside it.
+			return script[i:i+j] + "\n" + body
 		}
 		return body
 	default: // fish: one complete line per flag, scoped by subcommand
@@ -176,5 +189,37 @@ func TestCompletionAndFlagsAgreeBothWays(t *testing.T) {
 	// Guard the parser itself: a regexp that matches nothing passes vacuously.
 	if total < 40 {
 		t.Fatalf("found only %d defined flags across subcommands; parsing is broken", total)
+	}
+}
+
+// A flag that takes a value must be handled in bash's "$prev" case, or tab
+// after it offers more flags where a value belongs. index --root shipped that
+// way.
+func TestBashKnowsEveryValueTakingFlag(t *testing.T) {
+	script, _ := run(t, t.TempDir(), "completion", "bash")
+	start := strings.Index(script, `case "$prev" in`)
+	end := strings.Index(script[start:], "esac")
+	if start < 0 || end < 0 {
+		t.Fatal("bash script has no $prev case; parsing is broken")
+	}
+	handled := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^\s+([-a-z0-9|]+)\)`).FindAllStringSubmatch(script[start:start+end], -1) {
+		for _, f := range strings.Split(m[1], "|") {
+			handled[f] = true
+		}
+	}
+	valued := regexp.MustCompile(`(?m)^\s+-([a-zA-Z0-9-]+) \w+`)
+	n := 0
+	for _, sub := range subcommandsWithFlags {
+		help, _ := run(t, t.TempDir(), sub, "--help")
+		for _, m := range valued.FindAllStringSubmatch(help, -1) {
+			n++
+			if f := spell(m[1]); !handled[f] {
+				t.Errorf("bash completion offers flags after %s %s, which takes a value", sub, f)
+			}
+		}
+	}
+	if n < 10 {
+		t.Fatalf("found only %d value-taking flags; parsing is broken", n)
 	}
 }
