@@ -54,7 +54,7 @@ _reclaim() {
         '--site-data[opt in to web apps offline storage (lossy)]'
         '--claude-history[opt in to Claude transcript units]'
         '--heavy[opt in to large discovered caches]'
-        '--flatpak[opt in to flatpak units]'
+        '--flatpak[opt in to removing unused flatpak runtimes]'
         '--kernels[opt in to superseded kernels]'
         '--models[opt in to model stores]'
         '--xcode[opt in to Xcode derived data, device support and archives]'

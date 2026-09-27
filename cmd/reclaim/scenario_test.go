@@ -356,3 +356,37 @@ func TestScenarioOllamaModelsGoThroughTheServer(t *testing.T) {
 		t.Errorf("calls:\n%s\nwant ollama rm of the listed model\n%s", calls, r.Out)
 	}
 }
+
+// A running flatpak app keeps its cache; the others go by default.
+func TestScenarioRunningFlatpakAppKeepsItsCache(t *testing.T) {
+	s := th.New(t, bin)
+	s.Stub("flatpak", "exit 0")
+	s.Build(
+		th.Entry{Path: "home/.var/app/org.mozilla.firefox/cache/blob", Kind: th.File, Size: 8192, Protected: true},
+		th.Entry{Path: "home/.var/app/org.gimp.GIMP/cache/blob", Kind: th.File, Size: 8192},
+		th.Entry{Path: "home/.var/app/org.gimp.GIMP/data/work.xcf", Kind: th.File, Size: 100, Protected: true},
+	)
+	inst := filepath.Join(s.Tmp, "run", ".flatpak", "4242")
+	if err := os.MkdirAll(inst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inst, "info"), []byte("[Application]\nname=org.mozilla.firefox\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pid := fmt.Sprintf(`{"child-pid": %d}`, os.Getpid())
+	if err := os.WriteFile(filepath.Join(inst, "bwrapinfo.json"), []byte(pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := s.Apply("clean", "--apply", "--yes")
+
+	if r.Code != 0 {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+	if _, err := os.Stat(filepath.Join(s.Home, ".var/app/org.gimp.GIMP/cache")); !os.IsNotExist(err) {
+		t.Errorf("GIMP's cache survived though GIMP is not running:\n%s", r.Out)
+	}
+	if !strings.Contains(r.Out, "org.mozilla.firefox") {
+		t.Errorf("report does not say firefox's cache was parked:\n%s", r.Out)
+	}
+}

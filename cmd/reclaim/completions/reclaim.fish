@@ -48,7 +48,7 @@ complete -c reclaim -n '__fish_seen_subcommand_from clean' -l claude-plugins -d 
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l site-data -d 'opt in to web apps offline storage (lossy)'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l claude-history -d 'opt in to Claude transcripts'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l heavy -d 'opt in to large discovered caches'
-complete -c reclaim -n '__fish_seen_subcommand_from clean' -l flatpak -d 'opt in to flatpak units'
+complete -c reclaim -n '__fish_seen_subcommand_from clean' -l flatpak -d 'opt in to removing unused flatpak runtimes'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l kernels -d 'opt in to superseded kernels'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l models -d 'opt in to model stores'
 complete -c reclaim -n '__fish_seen_subcommand_from clean' -l xcode -d 'opt in to Xcode state'

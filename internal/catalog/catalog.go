@@ -248,11 +248,9 @@ func Build(env Env) *unit.Registry {
 	// apps update the old runtimes are left behind unreferenced at 1-2GiB
 	// apiece. Nothing removes them by default.
 	//
-	// Both units are opt-in. The uninstall changes what is installed rather
-	// than only what is cached, and the app caches are opt-in for a duller
-	// reason: lock detection cannot yet tell which flatpak apps are running, so
-	// the flag is standing in for the check that would otherwise park a live
-	// app's cache.
+	// The uninstall is opt-in: it changes what is installed rather than only
+	// what is cached. The app caches are not. lock.Flatpak parks a running
+	// app's cache, the way every other app's is parked.
 	if env.Has != nil && env.Has("flatpak") {
 		b.r.Add(&unit.Unit{ID: "flatpak-unused", Tier: unit.TierPkgCache, Reversible: true,
 			Label: "unused flatpak runtimes", Kind: unit.KindCmd, Flag: "--flatpak",
@@ -262,7 +260,7 @@ func Build(env Env) *unit.Registry {
 		// not: "data" holds the application's real state and "config" its
 		// settings, so the app directory is named a level at a time rather than
 		// globbed.
-		b.appCaches("flatpak-app-caches", "flatpak app caches", "--flatpak",
+		b.appCaches("flatpak-app-caches", "flatpak app caches", "",
 			filepath.Join(b.env.Home, ".var", "app"))
 	}
 

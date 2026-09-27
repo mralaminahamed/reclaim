@@ -81,6 +81,9 @@ func SealedEnv(home, bin, tmp string) []string {
 		"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"),
 		"XDG_CONFIG_HOME=" + filepath.Join(home, ".config"),
 		"XDG_DATA_HOME=" + filepath.Join(home, ".local", "share"),
+		// Where flatpak lists running instances. Sealed like the rest, so the
+		// host's running apps cannot lock a sandbox's units.
+		"XDG_RUNTIME_DIR=" + filepath.Join(tmp, "run"),
 		"XDG_STATE_HOME=" + filepath.Join(home, ".local", "state"),
 		"TMPDIR=" + tmp,
 		"LANG=C",
