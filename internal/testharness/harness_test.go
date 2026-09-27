@@ -103,3 +103,21 @@ func TestApplyPassesWhenNothingProtectedChanges(t *testing.T) {
 		t.Fatalf("false alarm: %v", rec.errs)
 	}
 }
+
+// reclaim sweeps /tmp by default. A sandboxed run must sweep the sandbox's
+// own tmp and never the developer's.
+func TestSweptTmpIsTheSandboxes(t *testing.T) {
+	s := New(t, "/bin/sh")
+	r := s.Run("-c", "export -p")
+	if !strings.Contains(r.Out, "RECLAIM_TMP_ROOTS") || !strings.Contains(r.Out, s.Tmp) {
+		t.Errorf("RECLAIM_TMP_ROOTS is not the sandbox tmp:\n%s", r.Out)
+	}
+}
+
+func TestExtraEnvReachesTheRun(t *testing.T) {
+	s := New(t, "/bin/sh")
+	s.ExtraEnv = []string{"RECLAIM_TMP_IDLE=1s"}
+	if r := s.Run("-c", "export -p"); !strings.Contains(r.Out, "RECLAIM_TMP_IDLE") {
+		t.Errorf("extra env missing:\n%s", r.Out)
+	}
+}

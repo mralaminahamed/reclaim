@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -388,5 +389,41 @@ func TestScenarioRunningFlatpakAppKeepsItsCache(t *testing.T) {
 	}
 	if !strings.Contains(r.Out, "org.mozilla.firefox") {
 		t.Errorf("report does not say firefox's cache was parked:\n%s", r.Out)
+	}
+}
+
+// Scratch the user left behind goes by default: known compile caches at any
+// age, other entries once idle. Something fresh, or holding a live socket,
+// stays.
+func TestScenarioIdleTmpEntriesGoAndLiveOnesStay(t *testing.T) {
+	s := th.New(t, bin)
+	tmp, _ := filepath.Rel(s.Root, s.Tmp)
+	s.Build(
+		th.Entry{Path: filepath.Join(tmp, "old-build/out.o"), Kind: th.File, Size: 8192},
+		th.Entry{Path: filepath.Join(tmp, "node-compile-cache/blob"), Kind: th.File, Size: 8192},
+	)
+	time.Sleep(1500 * time.Millisecond)
+	s.Build(th.Entry{Path: filepath.Join(tmp, "in-progress/part"), Kind: th.File, Size: 100, Protected: true})
+	sock := filepath.Join(s.Tmp, "tmux-test")
+	if err := os.MkdirAll(sock, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if l, err := net.Listen("unix", filepath.Join(sock, "default")); err == nil {
+		defer l.Close()
+	}
+	s.ExtraEnv = []string{"RECLAIM_TMP_IDLE=1s"}
+
+	r := s.Apply("clean", "--apply", "--yes")
+
+	if r.Code != 0 {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+	for _, gone := range []string{"old-build", "node-compile-cache"} {
+		if _, err := os.Stat(filepath.Join(s.Tmp, gone)); !os.IsNotExist(err) {
+			t.Errorf("%s survived:\n%s", gone, r.Out)
+		}
+	}
+	if _, err := os.Stat(sock); err != nil {
+		t.Errorf("the socket's directory was taken: %v\n%s", err, r.Out)
 	}
 }

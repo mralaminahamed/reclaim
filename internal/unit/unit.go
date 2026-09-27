@@ -80,6 +80,10 @@ type Unit struct {
 	// it gives up files least recently used first and stops at the target,
 	// rather than going whole. Without a target it goes whole, as any unit.
 	LRU bool
+	// IdleFor, when set, marks each path as an entry chosen because nothing
+	// had used it for this long. The runner checks again just before
+	// deleting, and leaves one that has been used since.
+	IdleFor time.Duration
 	// Detail is printed under the unit in the report. A byte count is enough
 	// to consent to deleting a cache and is not enough to consent to removing
 	// named packages.

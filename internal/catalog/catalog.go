@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mralaminahamed/reclaim/internal/runner"
 	"github.com/mralaminahamed/reclaim/internal/unit"
@@ -34,6 +35,11 @@ type Env struct {
 	// Ollama lists the models the ollama server holds. Nil or failing means
 	// the models unit is not offered.
 	Ollama func() ([]OllamaModel, error)
+	// TmpRoots are scratch directories swept for the user's leftovers, and
+	// TmpIdle how long an entry must be untouched to be taken. No roots or
+	// no idle period means nothing is swept.
+	TmpRoots []string
+	TmpIdle  time.Duration
 }
 
 // DefaultEnv returns an Env describing this machine.
@@ -41,7 +47,8 @@ func DefaultEnv(home string) Env {
 	return Env{Home: home, Has: func(bin string) bool {
 		_, err := exec.LookPath(bin)
 		return err == nil
-	}, Docker: dockerState, Getenv: os.Getenv, Ollama: ollamaList}
+	}, Docker: dockerState, Getenv: os.Getenv, Ollama: ollamaList,
+		TmpRoots: tmpRoots(os.Getenv), TmpIdle: tmpIdle(os.Getenv)}
 }
 
 type builder struct {
@@ -269,6 +276,7 @@ func Build(env Env) *unit.Registry {
 	if env.Has != nil && env.Has("docker") {
 		b.docker()
 	}
+	b.tmp()
 	return b.r
 }
 
