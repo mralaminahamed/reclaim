@@ -25,31 +25,35 @@ import (
 // A manifest may be a filepath.Match pattern: there is no fixed name for a
 // terraform config or a .NET project file.
 //
-// "dist" is deliberately absent. Unlike ".next" or "_build" it carries no
-// framework's meaning, and plenty of published packages commit one.
+// "dist" carries no framework's meaning, and plenty of published packages
+// commit one, so it is claimed only with proof: inside a git repository that
+// ignores it and tracks nothing under it (needsProof). Outside a repository
+// there is no way to tell, and it is left alone.
 var depDirs = []struct {
-	dir       string
-	manifests []string
+	dir        string
+	manifests  []string
+	needsProof bool
 }{
-	{"node_modules", []string{"package.json"}},
-	{"vendor", []string{"composer.json"}},
-	{"target", []string{"Cargo.toml", "pom.xml"}},
-	{"build", []string{"build.gradle", "build.gradle.kts", "pubspec.yaml"}},
-	{".venv", []string{"pyproject.toml", "requirements.txt", "setup.py"}},
-	{"venv", []string{"pyproject.toml", "requirements.txt", "setup.py"}},
-	{".next", []string{"package.json"}},
-	{".nuxt", []string{"package.json"}},
-	{".turbo", []string{"package.json"}},
-	{"_build", []string{"mix.exs"}},
-	{"deps", []string{"mix.exs"}},
-	{".terraform", []string{"*.tf"}},
-	{"Pods", []string{"Podfile"}},
-	{"obj", []string{"*.csproj", "*.fsproj", "*.sln"}},
-	{"bin", []string{"*.csproj", "*.fsproj", "*.sln"}},
-	{"zig-cache", []string{"build.zig"}},
-	{".zig-cache", []string{"build.zig"}},
-	{"zig-out", []string{"build.zig"}},
-	{".dart_tool", []string{"pubspec.yaml"}},
+	{dir: "node_modules", manifests: []string{"package.json"}},
+	{dir: "vendor", manifests: []string{"composer.json"}},
+	{dir: "target", manifests: []string{"Cargo.toml", "pom.xml"}},
+	{dir: "build", manifests: []string{"build.gradle", "build.gradle.kts", "pubspec.yaml"}},
+	{dir: ".venv", manifests: []string{"pyproject.toml", "requirements.txt", "setup.py"}},
+	{dir: "venv", manifests: []string{"pyproject.toml", "requirements.txt", "setup.py"}},
+	{dir: ".next", manifests: []string{"package.json"}},
+	{dir: ".nuxt", manifests: []string{"package.json"}},
+	{dir: ".turbo", manifests: []string{"package.json"}},
+	{dir: "_build", manifests: []string{"mix.exs"}},
+	{dir: "deps", manifests: []string{"mix.exs"}},
+	{dir: ".terraform", manifests: []string{"*.tf"}},
+	{dir: "Pods", manifests: []string{"Podfile"}},
+	{dir: "obj", manifests: []string{"*.csproj", "*.fsproj", "*.sln"}},
+	{dir: "bin", manifests: []string{"*.csproj", "*.fsproj", "*.sln"}},
+	{dir: "zig-cache", manifests: []string{"build.zig"}},
+	{dir: ".zig-cache", manifests: []string{"build.zig"}},
+	{dir: "zig-out", manifests: []string{"build.zig"}},
+	{dir: ".dart_tool", manifests: []string{"pubspec.yaml"}},
+	{dir: "dist", manifests: []string{"package.json"}, needsProof: true},
 }
 
 // artifactDirs is every directory name in depDirs, for the idleness walk to
@@ -90,54 +94,140 @@ func hasManifest(proj string, manifests []string) bool {
 	return false
 }
 
+// maxDepth bounds how far below the root projects are looked for. A plugin
+// in Sites/<site>/wp-content/plugins/<plugin> is four levels down.
+const maxDepth = 6
+
 // IdleProjects registers dependency trees belonging to projects whose sources
 // have not been touched for idleDays.
 //
 // Judging the project's own activity, rather than the timestamp on the
 // dependency directory, is what distinguishes a dormant site from one that was
 // merely installed a while ago and is still in daily use.
+//
+// Projects are found at any depth up to maxDepth, so a plugin inside a site is
+// its own project. Hidden directories, symlinks and the artifact trees
+// themselves are never entered.
 func IdleProjects(r *unit.Registry, root string, idleDays int) {
 	if idleDays <= 0 || root == "" {
 		return
 	}
-	entries, err := os.ReadDir(root)
+	cutoff := time.Now().Add(-time.Duration(idleDays) * 24 * time.Hour)
+	walkProjects(root, "", 0, func(proj, rel string) {
+		claimIdle(r, proj, rel, cutoff)
+	})
+}
+
+// walkProjects calls visit for every directory below dir, to maxDepth, that
+// could be a project: not hidden, not a symlink, not an artifact tree.
+func walkProjects(dir, rel string, depth int, visit func(proj, rel string)) {
+	if depth >= maxDepth {
+		return
+	}
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	cutoff := time.Now().Add(-time.Duration(idleDays) * 24 * time.Hour)
-
 	for _, e := range entries {
-		if !e.IsDir() {
+		name := e.Name()
+		if !e.IsDir() || strings.HasPrefix(name, ".") || artifactDirs[name] {
 			continue
 		}
-		proj := filepath.Join(root, e.Name())
-		newest := newestSource(proj)
-		if newest.IsZero() || newest.After(cutoff) {
-			continue
-		}
-		idle := int(time.Since(newest).Hours() / 24)
-
-		for _, d := range depDirs {
-			dep := filepath.Join(proj, d.dir)
-			if !isDir(dep) {
-				continue
-			}
-			// The manifest is what proves this is a project. A bare
-			// node_modules with nothing beside it may be something else.
-			if !hasManifest(proj, d.manifests) {
-				continue
-			}
-			r.Add(&unit.Unit{
-				ID:         "idle-" + d.dir + "-" + strings.ReplaceAll(e.Name(), " ", "-"),
-				Tier:       unit.TierLossy,
-				Reversible: false,
-				Label:      e.Name() + "/" + d.dir + " (" + itoa(idle) + "d idle)",
-				Kind:       unit.KindPaths,
-				Paths:      []string{dep},
-				Flag:       "--sites-idle",
-			})
-		}
+		child, childRel := filepath.Join(dir, name), filepath.Join(rel, name)
+		visit(child, childRel)
+		walkProjects(child, childRel, depth+1, visit)
 	}
+}
+
+// claimIdle registers proj's dependency trees if proj is idle.
+func claimIdle(r *unit.Registry, proj, rel string, cutoff time.Time) {
+	var idle int
+	idleKnown := false
+	repo := inRepo(proj)
+	for _, d := range depDirs {
+		dep := filepath.Join(proj, d.dir)
+		if !isDir(dep) {
+			continue
+		}
+		// The manifest is what proves this is a project. A bare
+		// node_modules with nothing beside it may be something else.
+		if !hasManifest(proj, d.manifests) {
+			continue
+		}
+		if holdsIrreplaceable(dep) {
+			continue
+		}
+		// Inside a repository git can say whether the directory is
+		// generated: nothing under it tracked, and the directory ignored.
+		// A committed vendor/ or build/ is source, whatever its name. If git
+		// cannot answer, the directory is left alone.
+		if repo && !generated(proj, d.dir) {
+			continue
+		}
+		if !repo && d.needsProof {
+			continue
+		}
+		// Idleness is judged only once a candidate exists: it walks the
+		// whole project, and most directories are not projects.
+		if !idleKnown {
+			newest := newestSource(proj)
+			if newest.IsZero() || newest.After(cutoff) {
+				return
+			}
+			idle, idleKnown = int(time.Since(newest).Hours()/24), true
+		}
+		r.Add(&unit.Unit{
+			ID:         "idle-" + d.dir + "-" + strings.ReplaceAll(strings.ReplaceAll(rel, string(filepath.Separator), "-"), " ", "-"),
+			Tier:       unit.TierLossy,
+			Reversible: false,
+			Label:      rel + "/" + d.dir + " (" + itoa(idle) + "d idle)",
+			Kind:       unit.KindPaths,
+			Paths:      []string{dep},
+			Flag:       "--sites-idle",
+		})
+	}
+}
+
+// holdsIrreplaceable reports whether an artifact directory contains something
+// that is not an artifact: a repository of its own (a dependency checked out
+// for development), or Anchor's program keypairs in target/deploy, which are
+// the only copy.
+func holdsIrreplaceable(dep string) bool {
+	if _, err := os.Lstat(filepath.Join(dep, ".git")); err == nil {
+		return true
+	}
+	keys, _ := filepath.Glob(filepath.Join(dep, "deploy", "*-keypair.json"))
+	return len(keys) > 0
+}
+
+// inRepo reports whether dir is inside a git working tree, by looking for a
+// .git entry (a directory, or a file for worktrees and submodules) in it or
+// any parent.
+func inRepo(dir string) bool {
+	for {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+// generated reports whether git vouches for name, a directory in proj, being
+// generated: it tracks nothing under it and ignores it. Any failure to get an
+// answer is a no.
+func generated(proj, name string) bool {
+	out, err := runGit(proj, "ls-files", "-z", "--", name)
+	if err != nil || len(out) > 0 {
+		return false
+	}
+	// check-ignore exits 0 when ignored, 1 when not, 128 on error. A tracked
+	// file is never reported ignored, which is why ls-files comes first.
+	_, err = runGit(proj, "check-ignore", "-q", name+"/")
+	return err == nil
 }
 
 // newestSource returns the newest modification time among a project's own
