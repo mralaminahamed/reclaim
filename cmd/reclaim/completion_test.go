@@ -71,42 +71,110 @@ func TestUnitsIsNotAdvertised(t *testing.T) {
 	}
 }
 
-// The scripts are embedded, so a flag added to main.go stops being completable
-// without anything failing. This is the thing that notices.
-func TestEveryCleanFlagAppearsInEveryCompletionScript(t *testing.T) {
-	flagLine := regexp.MustCompile(`(?m)^\s+-([a-z0-9-]+)`)
+// subcommandsWithFlags are checked both ways: every flag a subcommand defines
+// must be offered by every script, and every flag a script offers must exist.
+// The one-way check let "analyze -n" ship -- completion offered a flag the
+// binary rejects.
+var subcommandsWithFlags = []string{"clean", "status", "analyze", "history", "index"}
 
-	var flags []string
-	// Every subcommand that has flags, not only clean: analyze grew three and
-	// nothing would have noticed.
-	for _, sub := range []string{"clean", "analyze"} {
-		help, _ := run(t, t.TempDir(), sub, "--help")
-		for _, m := range flagLine.FindAllStringSubmatch(help, -1) {
-			// Short flags are spelled differently again in each shell and are
-			// not worth a third rule.
-			if len(m[1]) > 1 {
-				flags = append(flags, m[1])
+// definedFlags parses "<sub> --help", which is the FlagSet's own listing.
+func definedFlags(t *testing.T, sub string) map[string]bool {
+	t.Helper()
+	help, _ := run(t, t.TempDir(), sub, "--help")
+	out := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^\s+-([a-zA-Z0-9-]+)`).FindAllStringSubmatch(help, -1) {
+		out[spell(m[1])] = true
+	}
+	return out
+}
+
+// spell is the conventional spelling: one dash for a single letter, two
+// otherwise. Go accepts either; completion offers this one.
+func spell(name string) string {
+	if len(name) == 1 {
+		return "-" + name
+	}
+	return "--" + name
+}
+
+// section returns the text of a script that belongs to one subcommand.
+func section(sh, script, sub string) string {
+	switch sh {
+	case "bash", "zsh":
+		start := regexp.MustCompile(`(?m)^\s+` + regexp.QuoteMeta(sub) + `\)`).FindStringIndex(script)
+		if start == nil {
+			return ""
+		}
+		rest := script[start[1]:]
+		body := rest[:strings.Index(rest, ";;")]
+		if sh == "zsh" && strings.Contains(body, "$clean_flags") {
+			i := strings.Index(script, "clean_flags=(")
+			j := strings.Index(script[i:], "\n    )")
+			return script[i : i+j]
+		}
+		return body
+	default: // fish: one complete line per flag, scoped by subcommand
+		var b strings.Builder
+		for _, line := range strings.Split(script, "\n") {
+			if strings.Contains(line, "__fish_seen_subcommand_from "+sub+"'") {
+				b.WriteString(line + "\n")
+			}
+		}
+		return b.String()
+	}
+}
+
+func offeredFlags(sh, text string) map[string]bool {
+	out := map[string]bool{}
+	if sh == "fish" {
+		for _, m := range regexp.MustCompile(`\s-l ([a-z0-9-]+)`).FindAllStringSubmatch(text, -1) {
+			out["--"+m[1]] = true
+		}
+		for _, m := range regexp.MustCompile(`\s-s ([a-zA-Z0-9])`).FindAllStringSubmatch(text, -1) {
+			out["-"+m[1]] = true
+		}
+		return out
+	}
+	if sh == "bash" {
+		// Only the word list handed to compgen is offered; compgen's own -W
+		// is not a reclaim flag.
+		var words []string
+		for _, m := range regexp.MustCompile(`-W "([^"]*)"`).FindAllStringSubmatch(text, -1) {
+			words = append(words, m[1])
+		}
+		text = strings.Join(words, " ")
+	}
+	for _, m := range regexp.MustCompile(`(?:^|[\s"'(])(--?[a-zA-Z0-9][a-zA-Z0-9-]*)`).FindAllStringSubmatch(text, -1) {
+		out[m[1]] = true
+	}
+	return out
+}
+
+func TestCompletionAndFlagsAgreeBothWays(t *testing.T) {
+	scripts := map[string]string{}
+	for _, sh := range []string{"bash", "zsh", "fish"} {
+		scripts[sh], _ = run(t, t.TempDir(), "completion", sh)
+	}
+	total := 0
+	for _, sub := range subcommandsWithFlags {
+		defined := definedFlags(t, sub)
+		total += len(defined)
+		for sh, script := range scripts {
+			offered := offeredFlags(sh, section(sh, script, sub))
+			for f := range defined {
+				if !offered[f] {
+					t.Errorf("%s completion does not offer %s %s", sh, sub, f)
+				}
+			}
+			for f := range offered {
+				if !defined[f] {
+					t.Errorf("%s completion offers %s %s, which does not exist", sh, sub, f)
+				}
 			}
 		}
 	}
-	if len(flags) < 10 {
-		t.Fatalf("only found %d flags across --help output, parsing is wrong: %v", len(flags), flags)
-	}
-
-	// Each shell spells a long option its own way. fish declares "-l apply",
-	// bash and zsh carry the literal "--apply", and asserting one syntax
-	// everywhere would only be testing that they all look like bash.
-	offers := map[string]func(string) string{
-		"bash": func(f string) string { return "--" + f },
-		"zsh":  func(f string) string { return "--" + f },
-		"fish": func(f string) string { return "-l " + f },
-	}
-	for sh, spelling := range offers {
-		script, _ := run(t, t.TempDir(), "completion", sh)
-		for _, f := range flags {
-			if !strings.Contains(script, spelling(f)) {
-				t.Errorf("%s completion does not offer --%s", sh, f)
-			}
-		}
+	// Guard the parser itself: a regexp that matches nothing passes vacuously.
+	if total < 40 {
+		t.Fatalf("found only %d defined flags across subcommands; parsing is broken", total)
 	}
 }
