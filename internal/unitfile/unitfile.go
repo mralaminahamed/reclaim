@@ -40,6 +40,7 @@ type fileUnit struct {
 	MountHint  string   `json:"mount_hint"`
 	NeedsRoot  bool     `json:"needs_root"`
 	Requires   string   `json:"requires"`
+	LRU        bool     `json:"lru"`
 }
 
 // Parse reads unit definitions, resolving relative paths under home.
@@ -109,12 +110,17 @@ func (fu fileUnit) toUnit(home string) (*unit.Unit, error) {
 	}
 
 	if hasCmd {
+		// A command deletes by its own rules: there are no files to order.
+		if fu.LRU {
+			return nil, fmt.Errorf(`%s: "lru" applies to "paths", not a command`, fu.ID)
+		}
 		u.Kind = unit.KindCmd
 		u.Command = fu.Command
 		return u, nil
 	}
 
 	u.Kind = unit.KindPaths
+	u.LRU = fu.LRU
 	for _, p := range fu.Paths {
 		abs := p
 		if !filepath.IsAbs(abs) {
