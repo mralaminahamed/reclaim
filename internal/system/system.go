@@ -199,14 +199,14 @@ func Add(r *unit.Registry, env Env) {
 
 		// Thinning asks the system to free space and lets it choose which
 		// snapshots to drop; nothing on disk names the answer in advance, so
-		// Bytes is left at zero and MeasureFreed reports the real delta once
+		// Bytes is left at zero; the runner reports the measured delta once
 		// --apply has actually run it. Must be lossy: a local snapshot is the
 		// only copy of the state it captured.
 		r.Add(&unit.Unit{
 			ID: "system-tm-thin", Tier: unit.TierIrreplaceable, Reversible: false,
 			Label: "Time Machine local snapshots", Kind: unit.KindCmd,
 			Command: "sudo tmutil thinlocalsnapshots /", Flag: "--timemachine",
-			MountHint: "/", NeedsRoot: true, MeasureFreed: true,
+			MountHint: "/", NeedsRoot: true,
 			Detail: snapshotDetail(env.LocalSnapshots),
 		})
 	}

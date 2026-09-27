@@ -62,9 +62,9 @@ func TestApplyRunsCommandUnits(t *testing.T) {
 // A command like thinning APFS snapshots is not told what it will delete, so
 // nothing on disk can estimate its yield -- the delta in free space around
 // running it is the only honest number.
-func TestMeasureFreedReportsTheAvailDeltaNotTheEstimate(t *testing.T) {
+func TestMeasuredCommandReportsTheAvailDeltaNotTheEstimate(t *testing.T) {
 	u := &unit.Unit{ID: "tm", Kind: unit.KindCmd, Command: "tmutil thinlocalsnapshots /",
-		MeasureFreed: true, Bytes: 999, MountHint: "/"}
+		Bytes: 999, MountHint: "/"}
 
 	calls := 0
 	r := &Runner{Apply: true,
@@ -86,9 +86,9 @@ func TestMeasureFreedReportsTheAvailDeltaNotTheEstimate(t *testing.T) {
 
 // A command that frees nothing must report zero, never a negative number from
 // disk usage drifting the other way between the two measurements.
-func TestMeasureFreedNeverGoesNegative(t *testing.T) {
+func TestMeasuredCommandNeverGoesNegative(t *testing.T) {
 	u := &unit.Unit{ID: "tm", Kind: unit.KindCmd, Command: "tmutil thinlocalsnapshots /",
-		MeasureFreed: true, MountHint: "/"}
+		MountHint: "/"}
 
 	calls := 0
 	r := &Runner{Apply: true,
@@ -110,8 +110,8 @@ func TestMeasureFreedNeverGoesNegative(t *testing.T) {
 
 // A dry run never executes the command, so there is nothing to measure a
 // delta from -- it falls back to the same estimate every other unit shows.
-func TestMeasureFreedDryRunShowsTheEstimate(t *testing.T) {
-	u := &unit.Unit{ID: "tm", Kind: unit.KindCmd, MeasureFreed: true, Bytes: 999}
+func TestMeasuredCommandDryRunShowsTheEstimate(t *testing.T) {
+	u := &unit.Unit{ID: "tm", Kind: unit.KindCmd, Bytes: 999}
 
 	r := &Runner{Apply: false}
 	got := r.Run([]*unit.Unit{u})
@@ -123,8 +123,8 @@ func TestMeasureFreedDryRunShowsTheEstimate(t *testing.T) {
 
 // A failing command may still have freed something, but a failure must still
 // read as a failure.
-func TestMeasureFreedCommandFailureReportsNoFreedAndTheError(t *testing.T) {
-	u := &unit.Unit{ID: "tm", Kind: unit.KindCmd, MeasureFreed: true, MountHint: "/"}
+func TestMeasuredCommandCommandFailureReportsNoFreedAndTheError(t *testing.T) {
+	u := &unit.Unit{ID: "tm", Kind: unit.KindCmd, MountHint: "/"}
 
 	r := &Runner{Apply: true,
 		Exec:  func(string) error { return os.ErrPermission },
