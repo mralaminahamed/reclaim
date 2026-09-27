@@ -270,6 +270,16 @@ The Hugging Face home also holds the login (`token`, `stored_tokens`), so
 `--models` takes only its `hub`, `xet`, `datasets` and `assets` directories, and
 `--discover` never claims the home whole.
 
+Ollama models go through `ollama rm`, which names exactly the models
+`ollama list` showed, so the server keeps its own index. reclaim never deletes
+blobs under a live store. The unit is lossy: a model built locally with
+`ollama create` does not come back from a pull, and nothing on disk tells it
+apart from one that does. So it needs `--models --allow-lossy`, and the report
+lists every model by name. The store is found, not assumed (`OLLAMA_MODELS`,
+`~/.ollama/models`, or the packaged service's `/usr/share/ollama`), and it is
+only measured. If the server isn't running, nothing is offered, because nothing
+can be listed.
+
 Stores moved to another disk are found where they were moved. `HF_HOME`,
 `HF_HUB_CACHE` (or the older `HUGGINGFACE_HUB_CACHE`) and `TORCH_HOME` are read
 for the model units. `XDG_CACHE_HOME` moves every `~/.cache` entry in the
