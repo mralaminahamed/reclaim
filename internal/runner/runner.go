@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mralaminahamed/reclaim/internal/fsutil"
 	"github.com/mralaminahamed/reclaim/internal/remove"
@@ -174,6 +175,15 @@ func (r *Runner) runOne(u *unit.Unit) (int64, []string, []remove.Skip, error) {
 			}
 			if !r.Apply {
 				planned = append(planned, t)
+				continue
+			}
+			// An entry picked for being idle is picked again at the moment of
+			// deletion: something that started using it since planning has
+			// made it not idle.
+			if u.IdleFor > 0 && !fsutil.IdleSince(t, time.Now().Add(-u.IdleFor)) {
+				if _, err := os.Lstat(t); err == nil {
+					skipped = append(skipped, remove.Skip{Path: t, Reason: "used since it was planned"})
+				}
 				continue
 			}
 			// Under a target, a cache of standalone files gives up its least
