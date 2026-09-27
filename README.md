@@ -292,6 +292,11 @@ is claimed only this way; outside a repository there is no telling. A
 dependency directory that is a repository itself, or a Rust `target/` holding
 Anchor's `deploy/*-keypair.json`, is never claimed.
 
+A directory inside an idle project that carries a valid
+[`CACHEDIR.TAG`](https://bford.info/cachedir/) is claimed whatever its name, as
+a reversible artifact: the tag is the directory's own statement that it can be
+regenerated. A committed one contradicts its tag and is left alone.
+
 ### The index
 
 ```bash

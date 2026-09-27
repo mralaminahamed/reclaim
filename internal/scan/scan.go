@@ -142,8 +142,20 @@ func walkProjects(dir, rel string, depth int, visit func(proj, rel string)) {
 // claimIdle registers proj's dependency trees if proj is idle.
 func claimIdle(r *unit.Registry, proj, rel string, cutoff time.Time) {
 	var idle int
-	idleKnown := false
+	idleKnown, isIdle := false, false
+	// Idleness is judged only once a candidate exists: it walks the whole
+	// project, and most directories are not projects.
+	dormant := func() bool {
+		if !idleKnown {
+			newest := newestSource(proj)
+			isIdle = !newest.IsZero() && !newest.After(cutoff)
+			idle, idleKnown = int(time.Since(newest).Hours()/24), true
+		}
+		return isIdle
+	}
+	id := strings.ReplaceAll(strings.ReplaceAll(rel, string(filepath.Separator), "-"), " ", "-")
 	repo := inRepo(proj)
+	claimTagged(r, proj, rel, id, repo, dormant, &idle)
 	for _, d := range depDirs {
 		dep := filepath.Join(proj, d.dir)
 		if !isDir(dep) {
@@ -167,22 +179,60 @@ func claimIdle(r *unit.Registry, proj, rel string, cutoff time.Time) {
 		if !repo && d.needsProof {
 			continue
 		}
-		// Idleness is judged only once a candidate exists: it walks the
-		// whole project, and most directories are not projects.
-		if !idleKnown {
-			newest := newestSource(proj)
-			if newest.IsZero() || newest.After(cutoff) {
-				return
-			}
-			idle, idleKnown = int(time.Since(newest).Hours()/24), true
+		if !dormant() {
+			return
 		}
 		r.Add(&unit.Unit{
-			ID:         "idle-" + d.dir + "-" + strings.ReplaceAll(strings.ReplaceAll(rel, string(filepath.Separator), "-"), " ", "-"),
+			ID:         "idle-" + d.dir + "-" + id,
 			Tier:       unit.TierLossy,
 			Reversible: false,
 			Label:      rel + "/" + d.dir + " (" + itoa(idle) + "d idle)",
 			Kind:       unit.KindPaths,
 			Paths:      []string{dep},
+			Flag:       "--sites-idle",
+		})
+	}
+}
+
+// cacheDirTag is the signature line a CACHEDIR.TAG must start with
+// (https://bford.info/cachedir/).
+const cacheDirTag = "Signature: 8a477f597d28d172789f06886806bc55"
+
+// claimTagged registers directories directly inside proj that carry a valid
+// CACHEDIR.TAG. The tag is the directory's own statement that it is a
+// regenerable cache, so unlike a dependency tree it is a reversible artifact.
+// Inside a repository a tracked directory contradicts the tag and is refused.
+func claimTagged(r *unit.Registry, proj, rel, id string, repo bool, dormant func() bool, idle *int) {
+	entries, err := os.ReadDir(proj)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || name == ".git" || artifactDirs[name] {
+			continue
+		}
+		dir := filepath.Join(proj, name)
+		data, err := os.ReadFile(filepath.Join(dir, "CACHEDIR.TAG"))
+		if err != nil || !strings.HasPrefix(string(data), cacheDirTag) {
+			continue
+		}
+		if repo {
+			out, err := runGit(proj, "ls-files", "-z", "--", name)
+			if err != nil || len(out) > 0 {
+				continue
+			}
+		}
+		if !dormant() {
+			return
+		}
+		r.Add(&unit.Unit{
+			ID:         "idle-cachedir-" + id + "-" + strings.ReplaceAll(name, " ", "-"),
+			Tier:       unit.TierArtifact,
+			Reversible: true,
+			Label:      rel + "/" + name + " (cache, " + itoa(*idle) + "d idle)",
+			Kind:       unit.KindPaths,
+			Paths:      []string{dir},
 			Flag:       "--sites-idle",
 		})
 	}

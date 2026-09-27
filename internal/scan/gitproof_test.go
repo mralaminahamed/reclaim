@@ -226,3 +226,59 @@ func TestScanNeverClaimsATargetHoldingKeypairs(t *testing.T) {
 		t.Fatal("claimed a target/ holding deploy keypairs")
 	}
 }
+
+const tag = "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag.\n"
+
+// A directory carrying a valid CACHEDIR.TAG says of itself that it is a
+// regenerable cache, whatever its name.
+func TestScanClaimsTaggedCacheDirectories(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, "app")
+	write(t, filepath.Join(p, "main.c"))
+	write(t, filepath.Join(p, "weird-build-output", "blob"))
+	if err := os.WriteFile(filepath.Join(p, "weird-build-output", "CACHEDIR.TAG"), []byte(tag), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(p, "notes", "blob"))
+	if err := os.WriteFile(filepath.Join(p, "notes", "CACHEDIR.TAG"), []byte("not the signature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	age(t, root, old)
+
+	r := unit.NewRegistry()
+	IdleProjects(r, root, 30)
+
+	got := registered(r)
+	if !got["idle-cachedir-app-weird-build-output"] {
+		t.Errorf("a tagged cache was not claimed: %v", got)
+	}
+	if got["idle-cachedir-app-notes"] {
+		t.Error("claimed a directory whose tag lacks the signature")
+	}
+	for _, u := range r.All() {
+		if u.ID == "idle-cachedir-app-weird-build-output" && (!u.Reversible || u.Tier != unit.TierArtifact) {
+			t.Errorf("tier = %v reversible = %v; a tagged cache is a regenerable artifact", u.Tier, u.Reversible)
+		}
+	}
+}
+
+// The tag is a claim, and a committed directory contradicts it.
+func TestScanRefusesATaggedDirectoryThatIsTracked(t *testing.T) {
+	needGit(t)
+	root := t.TempDir()
+	p := filepath.Join(root, "app")
+	write(t, filepath.Join(p, "main.c"))
+	write(t, filepath.Join(p, "out", "blob"))
+	os.WriteFile(filepath.Join(p, "out", "CACHEDIR.TAG"), []byte(tag), 0o644)
+	git(t, p, "init", "-q")
+	git(t, p, "add", ".")
+	git(t, p, "commit", "-qm", "init")
+	age(t, root, old)
+
+	r := unit.NewRegistry()
+	IdleProjects(r, root, 30)
+
+	if registered(r)["idle-cachedir-app-out"] {
+		t.Fatal("claimed a tagged directory that is committed")
+	}
+}
