@@ -76,7 +76,11 @@ func TestScenarioLinksOutOfACacheAreNotFollowed(t *testing.T) {
 		th.Entry{Path: "outside/precious", Kind: th.File, Size: 4096, Protected: true},
 		th.Entry{Path: filepath.Join(cache, "pip/http/x"), Kind: th.File, Size: 4096},
 		th.Entry{Path: filepath.Join(cache, "pip/escape"), Kind: th.Symlink, Target: "outside"},
-		th.Entry{Path: "home/.npm", Kind: th.Symlink, Target: "outside"},
+		// The npm cache directory itself is a link to data elsewhere: only the
+		// link may go. outside/_cacache is there so the test has something
+		// to lose -- without it this passed whatever the deleter did.
+		th.Entry{Path: "outside/_cacache/precious", Kind: th.File, Size: 4096, Protected: true},
+		th.Entry{Path: "home/.npm/_cacache", Kind: th.Symlink, Target: "outside/_cacache"},
 	)
 
 	if r := s.Apply("clean", "--apply", "--yes"); r.Code != 0 {
