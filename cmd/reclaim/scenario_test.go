@@ -280,16 +280,19 @@ func TestScenarioRunningElectronAppKeepsItsCache(t *testing.T) {
 		t.Skip("no hostname")
 	}
 	s := th.New(t, bin)
+	// Where apps keep their data differs by platform: ~/.config on Linux,
+	// ~/Library/Application Support on macOS.
+	apps, _ := filepath.Rel(s.Root, discover.NestedRoots(s.Home)[0])
 	s.Build(
-		th.Entry{Path: "home/.config/Running/Local State", Kind: th.File, Size: 10},
-		th.Entry{Path: "home/.config/Running/Cache/blob", Kind: th.File, Size: 4096, Protected: true},
-		th.Entry{Path: "home/.config/Stopped/Local State", Kind: th.File, Size: 10},
-		th.Entry{Path: "home/.config/Stopped/Partitions/p/Cache/blob", Kind: th.File, Size: 4096},
+		th.Entry{Path: filepath.Join(apps, "Running/Local State"), Kind: th.File, Size: 10},
+		th.Entry{Path: filepath.Join(apps, "Running/Cache/blob"), Kind: th.File, Size: 4096, Protected: true},
+		th.Entry{Path: filepath.Join(apps, "Stopped/Local State"), Kind: th.File, Size: 10},
+		th.Entry{Path: filepath.Join(apps, "Stopped/Partitions/p/Cache/blob"), Kind: th.File, Size: 4096},
 	)
 	// Chromium's lock is a symlink whose target is "host-pid", not a path,
 	// so it is made directly rather than through Build, which resolves
 	// relative targets against the sandbox.
-	if err := os.Symlink(fmt.Sprintf("%s-%d", host, os.Getpid()), filepath.Join(s.Home, ".config/Running/SingletonLock")); err != nil {
+	if err := os.Symlink(fmt.Sprintf("%s-%d", host, os.Getpid()), filepath.Join(s.Root, apps, "Running/SingletonLock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -301,7 +304,7 @@ func TestScenarioRunningElectronAppKeepsItsCache(t *testing.T) {
 	if !strings.Contains(r.Out, "Running") || !strings.Contains(r.Out, "Locked") {
 		t.Errorf("the running app was not reported as locked:\n%s", r.Out)
 	}
-	if _, err := os.Stat(filepath.Join(s.Home, ".config/Stopped/Partitions/p/Cache")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.Root, apps, "Stopped/Partitions/p/Cache")); !os.IsNotExist(err) {
 		t.Errorf("the stopped app's partition cache survived:\n%s", r.Out)
 	}
 }
