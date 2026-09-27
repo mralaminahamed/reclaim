@@ -308,3 +308,26 @@ func TestScenarioRunningElectronAppKeepsItsCache(t *testing.T) {
 		t.Errorf("the stopped app's partition cache survived:\n%s", r.Out)
 	}
 }
+
+// The Hugging Face home holds the login beside the downloads. --models takes
+// the downloads, and --discover must not take the directory whole instead.
+func TestScenarioModelsKeepsTheHuggingFaceLogin(t *testing.T) {
+	s := th.New(t, bin)
+	s.Build(
+		th.Entry{Path: "home/.cache/huggingface/hub/models--x/blobs/abc", Kind: th.File, Size: 8192},
+		th.Entry{Path: "home/.cache/huggingface/xet/chunk", Kind: th.File, Size: 8192},
+		th.Entry{Path: "home/.cache/huggingface/token", Kind: th.File, Size: 40, Mode: 0o600, Protected: true},
+		th.Entry{Path: "home/.cache/huggingface/stored_tokens", Kind: th.File, Size: 80, Mode: 0o600, Protected: true},
+	)
+
+	r := s.Apply("clean", "--models", "--discover", "--apply", "--yes")
+
+	if r.Code != 0 {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+	for _, gone := range []string{"hub", "xet"} {
+		if _, err := os.Stat(filepath.Join(s.Home, ".cache/huggingface", gone)); !os.IsNotExist(err) {
+			t.Errorf("%s survived --models:\n%s", gone, r.Out)
+		}
+	}
+}

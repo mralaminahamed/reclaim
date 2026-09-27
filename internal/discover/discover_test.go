@@ -198,3 +198,18 @@ func TestXDGCacheLabelNamesTheRealRoot(t *testing.T) {
 		}
 	}
 }
+
+// Discovery claims a cache root child whole. The Hugging Face home is not
+// disposable whole -- it holds the login -- so it is never claimed, even when
+// the catalog registered nothing inside it.
+func TestXDGCachesLeavesTheHuggingFaceHome(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".cache")
+	if err := os.MkdirAll(filepath.Join(root, "huggingface"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := unit.NewRegistry()
+	XDGCaches(r, root)
+	if _, ok := r.Get("xdg-huggingface"); ok {
+		t.Fatal("claimed the Hugging Face home whole")
+	}
+}
