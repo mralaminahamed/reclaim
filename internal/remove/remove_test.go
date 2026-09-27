@@ -290,3 +290,60 @@ func TestTreeToleratesADirectoryThatVanishes(t *testing.T) {
 		t.Fatalf("Outcome = %+v, want the tree gone and no error", out)
 	}
 }
+
+// A file swapped for a non-empty directory mid-run is the tree changing under
+// the walk, like a re-populated directory: a skip, not a failure.
+func TestTreeSkipsAFileSwappedForADirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "cache")
+	mk(t, filepath.Join(root, "f"))
+
+	real := beforeUnlink
+	t.Cleanup(func() { beforeUnlink = real })
+	beforeUnlink = func(r *os.Root, name string) {
+		if name == "f" {
+			os.Remove(filepath.Join(root, "f"))
+			mk(t, filepath.Join(root, "f", "new"))
+		}
+	}
+
+	out := Tree(root)
+
+	if out.Err != nil || len(out.Skipped) == 0 {
+		t.Fatalf("Outcome = %+v, want a skip and no error", out)
+	}
+}
+
+// A read-only directory made writable so its contents could go, but which
+// then could not be emptied, gets its mode back: the walk changed it only to
+// delete it.
+func TestTreeRestoresTheModeOfADirectoryItCouldNotEmpty(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	root := filepath.Join(t.TempDir(), "cache")
+	ro := filepath.Join(root, "ro")
+	mk(t, filepath.Join(ro, "mnt", "precious"))
+	if err := os.Chmod(ro, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(ro, 0o755) })
+
+	real := devOf
+	t.Cleanup(func() { devOf = real })
+	devOf = func(fi fs.FileInfo) uint64 {
+		if fi.Name() == "mnt" && fi.IsDir() {
+			return real(fi) + 1
+		}
+		return real(fi)
+	}
+
+	Tree(root)
+
+	fi, err := os.Stat(ro)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o555 {
+		t.Errorf("mode = %v, want 0555 restored", fi.Mode().Perm())
+	}
+}

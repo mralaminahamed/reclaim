@@ -42,11 +42,12 @@ const changed = "changed during removal"
 // the others open a window at each point where the tree could change under
 // the walk.
 var (
-	devOf       = deviceOf
-	mountPoints = fsutil.MountPoints
-	afterLstat  = func() {}
-	beforeOpen  = func(root *os.Root, name string) {}
-	beforeRmdir = func(root *os.Root, name string) {}
+	devOf        = deviceOf
+	mountPoints  = fsutil.MountPoints
+	afterLstat   = func() {}
+	beforeOpen   = func(root *os.Root, name string) {}
+	beforeRmdir  = func(root *os.Root, name string) {}
+	beforeUnlink = func(root *os.Root, name string) {}
 )
 
 // Tree removes target and everything under it.
@@ -87,9 +88,14 @@ func Tree(target string) Outcome {
 		// the Root itself; that is the race, not a failure.
 		return Outcome{Skipped: []Skip{{target, changed}}}
 	}
-	w := &walker{root: root, target: target, dev: devOf(fi), uid: uint32(os.Geteuid()),
+	rfi, err := root.Stat(".")
+	if err != nil || !os.SameFile(fi, rfi) {
+		root.Close()
+		return Outcome{Skipped: []Skip{{target, changed}}}
+	}
+	w := &walker{target: target, dev: devOf(fi), uid: uint32(os.Geteuid()),
 		mounts: mountsUnder(target)}
-	emptied := w.dir(".", fi)
+	emptied := w.empty(root, ".")
 	root.Close()
 
 	out := Outcome{Skipped: w.skipped, Err: w.err}
@@ -126,7 +132,6 @@ func mountsUnder(target string) map[string]bool {
 }
 
 type walker struct {
-	root    *os.Root
 	target  string
 	dev     uint64
 	uid     uint32
@@ -135,95 +140,121 @@ type walker struct {
 	err     error
 }
 
-func (w *walker) fail(name string, err error) {
+func (w *walker) fail(rel string, err error) {
 	if w.err == nil {
-		w.err = fmt.Errorf("%s: %w", filepath.Join(w.target, name), err)
+		w.err = fmt.Errorf("%s: %w", filepath.Join(w.target, rel), err)
 	}
 }
 
-func (w *walker) skip(name, reason string) {
-	w.skipped = append(w.skipped, Skip{filepath.Join(w.target, name), reason})
+func (w *walker) skip(rel, reason string) {
+	w.skipped = append(w.skipped, Skip{filepath.Join(w.target, rel), reason})
 }
 
-// dir empties the directory name (relative to the root) and reports whether
-// it is now empty. It does not remove name itself. want is what the caller
-// saw at name when it decided to descend; anything else found there now is
-// left alone.
-func (w *walker) dir(name string, want os.FileInfo) bool {
-	beforeOpen(w.root, name)
-	f, err := w.root.Open(name)
-	if os.IsNotExist(err) {
-		return true // removed by someone else: the end state asked for
-	}
+// empty removes everything inside the directory d, whose path relative to the
+// target is rel, and reports whether it is now empty. It does not remove d.
+//
+// Each directory is worked on through its own Root, opened from its parent's,
+// so every operation is a single path component: nothing is re-resolved from
+// the top, and nothing can be redirected by a component higher up.
+func (w *walker) empty(d *os.Root, rel string) bool {
+	f, err := d.Open(".")
 	if err != nil {
-		w.fail(name, err)
+		w.fail(rel, err)
 		return false
 	}
+	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
-		f.Close()
-		w.fail(name, err)
-		return false
-	}
-	// Open follows symlinks inside the root. If name was swapped for a link
-	// since it was checked, this is a different directory -- possibly one
-	// the walk deliberately skipped, such as a mount point.
-	if !os.SameFile(fi, want) {
-		f.Close()
-		w.skip(name, changed)
+		w.fail(rel, err)
 		return false
 	}
 	// Go's module cache makes every directory 0555; nothing inside can be
 	// unlinked until it is writable again. Only our own directories are
 	// changed -- someone else's was read-only for a reason this code does
 	// not know, and the removal fails as it should.
-	if uid, ok := ownerOf(fi); ok && uid == w.uid && fi.Mode().Perm()&0o700 != 0o700 {
-		f.Chmod(fi.Mode().Perm() | 0o700)
+	mode := fi.Mode().Perm()
+	chmodded := false
+	if uid, ok := ownerOf(fi); ok && uid == w.uid && mode&0o700 != 0o700 {
+		chmodded = f.Chmod(mode|0o700) == nil
 	}
 	entries, err := f.ReadDir(-1)
-	f.Close()
 	if err != nil {
-		w.fail(name, err)
+		w.fail(rel, err)
 		return false
 	}
 
-	empty := true
+	isEmpty := true
 	for _, e := range entries {
-		child := filepath.Join(name, e.Name())
-		cfi, err := w.root.Lstat(child)
+		name := e.Name()
+		childRel := filepath.Join(rel, name)
+		cfi, err := d.Lstat(name)
 		if os.IsNotExist(err) {
 			continue // vanished on its own: nothing to do
 		}
 		if err != nil {
-			w.fail(child, err)
-			empty = false
+			w.fail(childRel, err)
+			isEmpty = false
 			continue
 		}
-		if cfi.IsDir() {
-			if devOf(cfi) != w.dev || w.mounts[child] {
-				w.skip(child, "mount point: another filesystem")
-				empty = false
-				continue
-			}
-			if !w.dir(child, cfi) {
-				empty = false
-				continue
-			}
-			beforeRmdir(w.root, child)
-			if err := w.root.Remove(child); err != nil && !os.IsNotExist(err) {
+		if !cfi.IsDir() {
+			beforeUnlink(d, name)
+			if err := d.Remove(name); err != nil && !os.IsNotExist(err) {
 				if notEmpty(err) {
-					w.skip(child, changed)
+					w.skip(childRel, changed) // replaced by a directory mid-run
 				} else {
-					w.fail(child, err)
+					w.fail(childRel, err)
 				}
-				empty = false
+				isEmpty = false
 			}
 			continue
 		}
-		if err := w.root.Remove(child); err != nil && !os.IsNotExist(err) {
-			w.fail(child, err)
-			empty = false
+		if devOf(cfi) != w.dev || w.mounts[childRel] {
+			w.skip(childRel, "mount point: another filesystem")
+			isEmpty = false
+			continue
+		}
+		if !w.descend(d, name, childRel, cfi) {
+			isEmpty = false
+			continue
+		}
+		beforeRmdir(d, name)
+		if err := d.Remove(name); err != nil && !os.IsNotExist(err) {
+			if notEmpty(err) {
+				w.skip(childRel, changed)
+			} else {
+				w.fail(childRel, err)
+			}
+			isEmpty = false
 		}
 	}
-	return empty
+	// The mode was changed only so the directory could be deleted. If it is
+	// staying, it goes back to what it was.
+	if !isEmpty && chmodded {
+		f.Chmod(mode)
+	}
+	return isEmpty
+}
+
+// descend opens the child directory name of d and empties it. want is what
+// Lstat saw there; if something else is found now -- the directory was
+// swapped for a symlink, perhaps to a mount point the walk skipped -- it is
+// left alone. A child that vanished counts as emptied.
+func (w *walker) descend(d *os.Root, name, rel string, want os.FileInfo) bool {
+	beforeOpen(d, rel)
+	sub, err := d.OpenRoot(name)
+	if os.IsNotExist(err) {
+		return true // removed by someone else: the end state asked for
+	}
+	if err != nil {
+		// A symlink swapped in that points out of d is refused by the Root.
+		w.skip(rel, changed)
+		return false
+	}
+	defer sub.Close()
+	sfi, err := sub.Stat(".")
+	if err != nil || !os.SameFile(sfi, want) {
+		w.skip(rel, changed)
+		return false
+	}
+	return w.empty(sub, rel)
 }
