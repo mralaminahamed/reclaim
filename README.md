@@ -127,6 +127,17 @@ reclaim clean --tier 2      # never escalate past tier 2
 hard to try. A comfortable disk gets only the free tiers; a critical one earns a
 cold reload.
 
+A target also changes how a cache goes. Where a tool can trim, dropping only
+what nothing uses any more (`npm cache verify`, `uv cache prune`,
+`pnpm store prune`), the trim runs first as a free unit and the full wipe waits
+a tier up. Caches made of standalone files (the Go build cache, pip, npm's
+`_cacache`, thumbnails) give up their least recently used files first, and
+reclaim stops as soon as the target is met. "Last used" means the later of a
+file's access and modification times. If the target is still short once every
+file is gone, whatever is left goes too. Without a target, every unit goes
+whole, as before. Module caches and extracted archives are never trimmed file
+by file, because half an unpacked package is worse than none.
+
 ### What to look at
 
 ```bash
