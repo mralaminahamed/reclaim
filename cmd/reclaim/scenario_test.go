@@ -1,0 +1,191 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/mralaminahamed/reclaim/internal/discover"
+	th "github.com/mralaminahamed/reclaim/internal/testharness"
+)
+
+var update = flag.Bool("update", false, "rewrite golden files")
+
+// realistic is a home shaped like the author's machine: package caches, an
+// Electron app's cache next to its settings, dotfiles and a project that must
+// survive.
+func realistic(s *th.Sandbox) {
+	cache, _ := filepath.Rel(s.Root, discover.CacheRoot(s.Home))
+	s.Build(
+		th.Entry{Path: "home/.npm/_cacache/index", Kind: th.File, Size: 8192},
+		th.Entry{Path: filepath.Join(cache, "pip/http/x"), Kind: th.File, Size: 8192},
+		th.Entry{Path: filepath.Join(cache, "go-build/aa/b"), Kind: th.File, Size: 8192},
+		th.Entry{Path: "home/.bashrc", Kind: th.File, Size: 100, Protected: true},
+		th.Entry{Path: "home/.ssh/id_ed25519", Kind: th.File, Size: 400, Mode: 0o600, Protected: true},
+		th.Entry{Path: "home/.config/Slack/Local Storage/leveldb/000003.log", Kind: th.File, Size: 4096, Protected: true},
+		th.Entry{Path: "home/Projects/app/main.go", Kind: th.File, Size: 300, Protected: true},
+		th.Entry{Path: "outside/precious", Kind: th.File, Size: 4096, Protected: true},
+	)
+}
+
+func TestScenarioDefaultApplyKeepsEverythingProtected(t *testing.T) {
+	s := th.New(t, bin)
+	realistic(s)
+
+	r := s.Apply("clean", "--apply", "--yes")
+
+	if r.Code != 0 {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+	if _, err := os.Stat(filepath.Join(s.Home, ".npm/_cacache")); !os.IsNotExist(err) {
+		t.Errorf("npm cache survived:\n%s", r.Out)
+	}
+}
+
+func TestScenarioReadOnlyModuleCacheIsRemoved(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	s := th.New(t, bin)
+	s.Build(
+		th.Entry{Path: "home/go/pkg/mod/golang.org/x/net@v0.58.0/quic/stream.go", Kind: th.File, Size: 4096},
+		th.Entry{Path: "home/go/pkg/mod/golang.org/x/net@v0.58.0/quic", Kind: th.Dir, Mode: 0o555},
+		th.Entry{Path: "home/go/pkg/mod/golang.org/x/net@v0.58.0", Kind: th.Dir, Mode: 0o555},
+		th.Entry{Path: "home/.bashrc", Kind: th.File, Size: 10, Protected: true},
+	)
+
+	r := s.Apply("clean", "--apply", "--yes", "--only", "go-modcache")
+
+	if r.Code != 0 || strings.Contains(r.Out, "== Failed ==") {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+	if _, err := os.Stat(filepath.Join(s.Home, "go/pkg/mod")); !os.IsNotExist(err) {
+		t.Errorf("module cache survived:\n%s", r.Out)
+	}
+}
+
+func TestScenarioLinksOutOfACacheAreNotFollowed(t *testing.T) {
+	s := th.New(t, bin)
+	cache, _ := filepath.Rel(s.Root, discover.CacheRoot(s.Home))
+	s.Build(
+		th.Entry{Path: "outside/precious", Kind: th.File, Size: 4096, Protected: true},
+		th.Entry{Path: filepath.Join(cache, "pip/http/x"), Kind: th.File, Size: 4096},
+		th.Entry{Path: filepath.Join(cache, "pip/escape"), Kind: th.Symlink, Target: "outside"},
+		th.Entry{Path: "home/.npm", Kind: th.Symlink, Target: "outside"},
+	)
+
+	if r := s.Apply("clean", "--apply", "--yes"); r.Code != 0 {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+}
+
+func TestScenarioSharedStoreIsNotOverReported(t *testing.T) {
+	s := th.New(t, bin)
+	s.Build(
+		th.Entry{Path: "home/.local/share/pnpm/store/v3/files/ab/pkg", Kind: th.File, Size: 1 << 20},
+		th.Entry{Path: "home/Projects/app/package.json", Kind: th.File, Size: 10, Protected: true},
+		th.Entry{Path: "home/Projects/app/node_modules/pkg", Kind: th.Hardlink, Target: "home/.local/share/pnpm/store/v3/files/ab/pkg"},
+	)
+
+	r := s.Run("clean", "--json", "--only", "pnpm-store")
+
+	var out struct {
+		Units []struct {
+			ID    string `json:"id"`
+			Bytes int64  `json:"bytes"`
+		} `json:"units"`
+	}
+	if err := json.Unmarshal([]byte(r.Out), &out); err != nil {
+		t.Fatalf("bad json: %v\n%s", err, r.Out)
+	}
+	found := false
+	for _, u := range out.Units {
+		if u.ID != "pnpm-store" {
+			continue
+		}
+		found = true
+		if u.Bytes >= 1<<20 {
+			t.Errorf("pnpm-store claims %d bytes; its only file is linked into a project", u.Bytes)
+		}
+	}
+	// Without this the test passes vacuously if the unit stops registering.
+	if !found {
+		t.Fatalf("pnpm-store was not planned at all:\n%s", r.Out)
+	}
+}
+
+func TestScenarioNativeCommandsAreStubbedAndDryRunCallsNothing(t *testing.T) {
+	s := th.New(t, bin)
+	realistic(s)
+	for _, tool := range []string{"npm", "go", "pip", "uv"} {
+		s.Stub(tool, "")
+	}
+
+	s.Run("clean")
+	if calls := s.Calls(); calls != nil {
+		t.Fatalf("a dry run executed commands: %q", calls)
+	}
+
+	s.Apply("clean", "--apply", "--yes")
+	calls := strings.Join(s.Calls(), "\n")
+	for _, want := range []string{"npm cache clean --force", "go clean"} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("expected %q among calls:\n%s", want, calls)
+		}
+	}
+}
+
+// The plan for the realistic home, reduced to what should only change on
+// purpose: which units land in which section, at which tier. Sizes and mount
+// points depend on the filesystem the test runs on and are left out.
+func TestScenarioRealisticPlanMatchesGolden(t *testing.T) {
+	s := th.New(t, bin)
+	realistic(s)
+
+	r := s.Run("clean", "--json")
+
+	type planned struct {
+		ID   string `json:"id"`
+		Tier int    `json:"tier"`
+	}
+	var out struct {
+		Units    []planned `json:"units"`
+		Locked   []planned `json:"locked"`
+		Withheld []planned `json:"withheld"`
+		OptIn    []planned `json:"opt_in"`
+	}
+	if err := json.Unmarshal([]byte(r.Out), &out); err != nil {
+		t.Fatalf("bad json: %v\n%s", err, r.Out)
+	}
+	var lines []string
+	for _, sec := range []struct {
+		name  string
+		units []planned
+	}{{"units", out.Units}, {"locked", out.Locked}, {"withheld", out.Withheld}, {"opt_in", out.OptIn}} {
+		for _, u := range sec.units {
+			lines = append(lines, fmt.Sprintf("%s %s tier=%d", sec.name, u.ID, u.Tier))
+		}
+	}
+	sort.Strings(lines)
+	got := strings.Join(lines, "\n") + "\n"
+
+	golden := filepath.Join("testdata", "realistic.golden")
+	if *update {
+		os.MkdirAll("testdata", 0o755)
+		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("%v (run with -update to create it)", err)
+	}
+	if got != string(want) {
+		t.Errorf("plan changed; if intended, re-run with -update.\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
