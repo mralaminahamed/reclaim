@@ -64,6 +64,10 @@ type jsonUnit struct {
 	// Measured marks a command unit: its figure after a run is the drop in
 	// free space, which other writers on the disk can disturb.
 	Measured bool `json:"measured,omitempty"`
+	// Shared is space hard-linked from outside the unit: not freed by it.
+	Shared     int64 `json:"shared_bytes,omitempty"`
+	Apparent   int64 `json:"apparent_bytes,omitempty"`
+	Unreadable int   `json:"unreadable,omitempty"`
 }
 
 // JSON writes a machine-readable summary.
@@ -123,7 +127,7 @@ func JSON(w io.Writer, s Summary) error {
 func toJSON(us []*unit.Unit) []jsonUnit {
 	out := make([]jsonUnit, 0, len(us))
 	for _, u := range us {
-		out = append(out, jsonUnit{u.ID, u.Label, int(u.Tier), u.Bytes, u.Mount, u.Flag, u.LockedBy, u.PID, u.Detail, u.Measured})
+		out = append(out, jsonUnit{u.ID, u.Label, int(u.Tier), u.Bytes, u.Mount, u.Flag, u.LockedBy, u.PID, u.Detail, u.Measured, u.Shared, u.Apparent, u.Unreadable})
 	}
 	return out
 }
@@ -141,6 +145,12 @@ func Text(w io.Writer, s Summary) {
 			mark := ""
 			if u.Measured {
 				mark, measured = " *", true
+			}
+			if u.Unreadable > 0 {
+				mark += fmt.Sprintf("  (at least: %d entries unreadable)", u.Unreadable)
+			}
+			if u.Shared > 0 {
+				mark += fmt.Sprintf("  (+%s shared, not freed)", fsutil.Human(u.Shared))
 			}
 			fmt.Fprintf(w, "  • %-38s %10s%s\n", u.Label, fsutil.Human(u.Bytes), mark)
 			// A size is enough to consent to deleting a cache, and not enough

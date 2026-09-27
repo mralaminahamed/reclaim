@@ -50,3 +50,24 @@ func TestOnlyMeasuredFiguresAreLabelled(t *testing.T) {
 		t.Errorf("text report does not say a measured figure is approximate:\n%s", txt.String())
 	}
 }
+
+func TestSharedAndUnreadableAreShown(t *testing.T) {
+	s := Summary{Selected: []*unit.Unit{{ID: "s", Label: "pnpm store", Bytes: 0, Shared: 5 << 20, Unreadable: 2, Apparent: 5 << 20}}}
+
+	var txt bytes.Buffer
+	Text(&txt, s)
+	if !strings.Contains(txt.String(), "5.0MiB shared, not freed") {
+		t.Errorf("shared space not shown:\n%s", txt.String())
+	}
+	if !strings.Contains(txt.String(), "at least") {
+		t.Errorf("unreadable entries not flagged:\n%s", txt.String())
+	}
+
+	var js bytes.Buffer
+	JSON(&js, s)
+	for _, k := range []string{`"shared_bytes": 5242880`, `"apparent_bytes": 5242880`, `"unreadable": 2`} {
+		if !strings.Contains(js.String(), k) {
+			t.Errorf("JSON lacks %s:\n%s", k, js.String())
+		}
+	}
+}

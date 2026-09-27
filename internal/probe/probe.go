@@ -83,7 +83,8 @@ func measure(u *unit.Unit) {
 	}
 	// Measured together, so a file hard-linked between two of the unit's own
 	// targets is credited once rather than claimed by neither.
-	u.Bytes = fsutil.Measure(targets).Allocated
+	m := fsutil.Measure(targets)
+	u.Bytes, u.Shared, u.Apparent, u.Unreadable = m.Allocated, m.Shared, m.Apparent, m.Unreadable
 }
 
 func mountHint(u *unit.Unit) string {

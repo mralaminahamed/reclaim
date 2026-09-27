@@ -100,8 +100,9 @@ func TestScenarioSharedStoreIsNotOverReported(t *testing.T) {
 
 	var out struct {
 		Units []struct {
-			ID    string `json:"id"`
-			Bytes int64  `json:"bytes"`
+			ID     string `json:"id"`
+			Bytes  int64  `json:"bytes"`
+			Shared int64  `json:"shared_bytes"`
 		} `json:"units"`
 	}
 	if err := json.Unmarshal([]byte(r.Out), &out); err != nil {
@@ -115,6 +116,9 @@ func TestScenarioSharedStoreIsNotOverReported(t *testing.T) {
 		found = true
 		if u.Bytes >= 1<<20 {
 			t.Errorf("pnpm-store claims %d bytes; its only file is linked into a project", u.Bytes)
+		}
+		if u.Shared < 1<<20 {
+			t.Errorf("pnpm-store shared = %d; the linked file should be reported as shared", u.Shared)
 		}
 	}
 	// Without this the test passes vacuously if the unit stops registering.
@@ -191,5 +195,28 @@ func TestScenarioRealisticPlanMatchesGolden(t *testing.T) {
 	}
 	if got != string(want) {
 		t.Errorf("plan changed; if intended, re-run with -update.\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A sparse file claims its length and occupies almost nothing; the plan must
+// be sized by what deleting would give back.
+func TestScenarioSparseFileIsSizedByWhatItOccupies(t *testing.T) {
+	s := th.New(t, bin)
+	cache, _ := filepath.Rel(s.Root, discover.CacheRoot(s.Home))
+	s.Build(th.Entry{Path: filepath.Join(cache, "pip/sparse"), Kind: th.Sparse, Size: 256 << 20})
+
+	r := s.Run("clean", "--json", "--only", "pip-cache")
+
+	var out struct {
+		Units []struct {
+			ID    string `json:"id"`
+			Bytes int64  `json:"bytes"`
+		} `json:"units"`
+	}
+	if err := json.Unmarshal([]byte(r.Out), &out); err != nil {
+		t.Fatalf("bad json: %v\n%s", err, r.Out)
+	}
+	if len(out.Units) != 1 || out.Units[0].Bytes >= 1<<20 {
+		t.Errorf("units = %+v, want pip-cache sized near zero for a sparse file", out.Units)
 	}
 }

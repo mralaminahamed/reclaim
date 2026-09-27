@@ -98,6 +98,13 @@ type Unit struct {
 	// is the measured change in free space rather than an estimate. Other
 	// writers on the same filesystem can disturb it, and the report says so.
 	Measured bool
+	// Shared is allocated space under the unit that is hard-linked from
+	// outside it: deleting the unit does not free it. Apparent is the sum of
+	// file lengths. Unreadable counts entries probe could not examine, so
+	// Bytes is a lower bound when it is non-zero. All three are set by probe.
+	Shared     int64
+	Apparent   int64
+	Unreadable int
 
 	// Discovered marks a unit the scanners claimed by shape rather than one
 	// the catalog named deliberately. Its tier is an assumption, not a
