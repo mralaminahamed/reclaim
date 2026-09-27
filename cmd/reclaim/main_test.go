@@ -314,7 +314,7 @@ func TestDiscoverOffersTheHugeCacheItHeldBack(t *testing.T) {
 
 	out, _ := runHeavy(t, home, "clean", "--discover")
 
-	for _, want := range []string{".cache/hugecache", "2.0MiB", "--heavy"} {
+	for _, want := range []string{"hugecache", "2.0MiB", "--heavy"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report does not mention %q:\n%s", want, out)
 		}
@@ -797,5 +797,29 @@ func TestSystemSaysWhenItHasNothingForThisPlatform(t *testing.T) {
 	}
 	if strings.TrimSpace(out) == "" {
 		t.Error("printed nothing at all")
+	}
+}
+
+// A cache home moved to another disk is where the caches are. Both the
+// catalog and the discovery sweep must look there, not at an empty ~/.cache.
+func TestRelocatedXDGCacheHomeIsWhereCachesAreFound(t *testing.T) {
+	home, xdg := t.TempDir(), t.TempDir()
+	for _, f := range []string{"go-build/00/blob", "somethingd/blob"} {
+		p := filepath.Join(xdg, f)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, make([]byte, 8192), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, code := runWith(t, home, []string{"XDG_CACHE_HOME=" + xdg}, "clean", "--discover", "--json")
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	for _, want := range []string{`"go-build"`, `"xdg-somethingd"`, filepath.Join(xdg, "somethingd")} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %s:\n%s", want, out)
+		}
 	}
 }

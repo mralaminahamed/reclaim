@@ -75,11 +75,20 @@ func XDGCaches(r *unit.Registry, cacheRoot string) {
 			Tier:       unit.TierArtifact,
 			Reversible: true,
 			Discovered: true,
-			Label:      ".cache/" + name,
+			Label:      cacheLabel(cacheRoot, d),
 			Kind:       unit.KindPaths,
 			Paths:      []string{d},
 		})
 	}
+}
+
+// cacheLabel is ".cache/<name>" for the usual root and the real path for any
+// other: a relocated cache home, or ~/Library/Caches on macOS.
+func cacheLabel(root, d string) string {
+	if filepath.Base(root) == ".cache" {
+		return ".cache/" + filepath.Base(d)
+	}
+	return d
 }
 
 // NestedCaches claims name-matched cache directories one level inside each

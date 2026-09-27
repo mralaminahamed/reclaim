@@ -10,6 +10,10 @@ import "path/filepath"
 // for data an application can recreate.
 func CacheRoot(home string) string { return filepath.Join(home, "Library", "Caches") }
 
+// CacheRootFrom is CacheRoot: $XDG_CACHE_HOME does not move ~/Library/Caches.
+// The catalog still follows it for the CLI tools that honour it on macOS.
+func CacheRootFrom(home string, _ func(string) string) string { return CacheRoot(home) }
+
 // NestedRoots is ~/Library/Application Support.
 //
 // This holds real application state, not caches -- it is the analogue of a

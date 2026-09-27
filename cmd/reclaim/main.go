@@ -222,7 +222,7 @@ func cmdClean(args []string) int {
 		scan.IdleProjects(reg, root, *sitesIdle)
 	}
 	if *doDiscover {
-		discover.XDGCaches(reg, discover.CacheRoot(home))
+		discover.XDGCaches(reg, discover.CacheRootFrom(home, os.Getenv))
 		discover.NestedCaches(reg, discover.NestedRoots(home))
 		discover.ChromiumCaches(reg, discover.NestedRoots(home))
 	}
