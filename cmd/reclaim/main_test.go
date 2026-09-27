@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -801,7 +802,8 @@ func TestSystemSaysWhenItHasNothingForThisPlatform(t *testing.T) {
 }
 
 // A cache home moved to another disk is where the caches are. Both the
-// catalog and the discovery sweep must look there, not at an empty ~/.cache.
+// catalog and, on Linux, the discovery sweep must look there, not at an empty
+// ~/.cache.
 func TestRelocatedXDGCacheHomeIsWhereCachesAreFound(t *testing.T) {
 	home, xdg := t.TempDir(), t.TempDir()
 	for _, f := range []string{"go-build/00/blob", "somethingd/blob"} {
@@ -817,7 +819,13 @@ func TestRelocatedXDGCacheHomeIsWhereCachesAreFound(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d:\n%s", code, out)
 	}
-	for _, want := range []string{`"go-build"`, `"xdg-somethingd"`, filepath.Join(xdg, "somethingd")} {
+	wants := []string{`"go-build"`}
+	// The sweep's root on macOS is ~/Library/Caches, which the variable does
+	// not move; the catalog's entries still follow it there.
+	if runtime.GOOS == "linux" {
+		wants = append(wants, `"xdg-somethingd"`, filepath.Join(xdg, "somethingd"))
+	}
+	for _, want := range wants {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %s:\n%s", want, out)
 		}
