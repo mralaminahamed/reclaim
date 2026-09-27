@@ -331,3 +331,28 @@ func TestScenarioModelsKeepsTheHuggingFaceLogin(t *testing.T) {
 		}
 	}
 }
+
+// Models go through "ollama rm", naming what the listing showed. Lossy, so
+// --models alone lists them and runs nothing; with --allow-lossy they go.
+func TestScenarioOllamaModelsGoThroughTheServer(t *testing.T) {
+	s := th.New(t, bin)
+	s.Stub("ollama", `[ "$1" = list ] && printf 'NAME ID SIZE MODIFIED\nllama3.2:latest a80c4f17acd5 2.0 GB 2 months ago\n'; exit 0`)
+
+	if r := s.Apply("clean", "--models", "--apply", "--yes"); r.Code != 0 {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+	for _, c := range s.Calls() {
+		if strings.HasPrefix(c, "ollama rm") {
+			t.Fatalf("ran %q without --allow-lossy", c)
+		}
+	}
+
+	r := s.Apply("clean", "--models", "--allow-lossy", "--apply", "--yes")
+	if r.Code != 0 {
+		t.Fatalf("exit %d:\n%s", r.Code, r.Out)
+	}
+	calls := strings.Join(s.Calls(), "\n")
+	if !strings.Contains(calls, "ollama rm llama3.2:latest") {
+		t.Errorf("calls:\n%s\nwant ollama rm of the listed model\n%s", calls, r.Out)
+	}
+}

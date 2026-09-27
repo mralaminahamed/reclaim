@@ -31,6 +31,9 @@ type Env struct {
 	// Getenv reads the environment, where tools are told their caches have
 	// moved. Nil reads as an empty environment.
 	Getenv func(string) string
+	// Ollama lists the models the ollama server holds. Nil or failing means
+	// the models unit is not offered.
+	Ollama func() ([]OllamaModel, error)
 }
 
 // DefaultEnv returns an Env describing this machine.
@@ -38,7 +41,7 @@ func DefaultEnv(home string) Env {
 	return Env{Home: home, Has: func(bin string) bool {
 		_, err := exec.LookPath(bin)
 		return err == nil
-	}, Docker: dockerState, Getenv: os.Getenv}
+	}, Docker: dockerState, Getenv: os.Getenv, Ollama: ollamaList}
 }
 
 type builder struct {
@@ -148,6 +151,9 @@ func Build(env Env) *unit.Registry {
 	// knows which parts are dead and we do not.
 	b.cmdAt("hf-prune", "huggingface prune", "hf", "hf cache prune", unit.TierPkgCache)
 	b.pathsAt("hf-cache", "huggingface models", unit.TierColdReload, true, "--models", b.hfCaches()...)
+	if b.env.Has != nil && b.env.Has("ollama") {
+		b.ollama()
+	}
 	b.pathsAt("torch-hub", "torch checkpoints", unit.TierColdReload, true, "--models",
 		append(b.under(".cache/torch"), b.dir("TORCH_HOME"))...)
 	b.paths("whisper-models", "whisper weights", unit.TierColdReload, true, "--models",
