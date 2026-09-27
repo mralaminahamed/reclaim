@@ -193,3 +193,100 @@ func TestTreeFailsOnADirectoryItCannotWrite(t *testing.T) {
 		t.Fatalf("Tree = %+v, want a permission error: the target's parent is not ours to change", out)
 	}
 }
+
+// The target is swapped for a symlink between the check and the open. The walk
+// must notice it is no longer looking at what it checked, and delete nothing.
+func TestTreeRefusesATargetSwappedAfterTheCheck(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "cache")
+	mk(t, filepath.Join(target, "f"))
+	mk(t, filepath.Join(dir, "outside", "precious"))
+
+	real := afterLstat
+	t.Cleanup(func() { afterLstat = real })
+	afterLstat = func() {
+		os.Rename(target, target+".old")
+		os.Symlink("outside", target)
+	}
+
+	out := Tree(target)
+
+	if gone(t, filepath.Join(dir, "outside", "precious")) {
+		t.Fatal("the walk followed a symlink swapped in for the target")
+	}
+	if out.Err != nil || len(out.Skipped) == 0 {
+		t.Errorf("Outcome = %+v, want a skip for the changed target", out)
+	}
+}
+
+// Same race one level down: a child directory swapped for a link to something
+// the walk had decided to leave alone.
+func TestTreeRefusesAChildSwappedAfterTheCheck(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "cache")
+	mk(t, filepath.Join(root, "a", "f"))
+	mk(t, filepath.Join(root, "keep", "precious"))
+
+	realDev, realOpen := devOf, beforeOpen
+	t.Cleanup(func() { devOf, beforeOpen = realDev, realOpen })
+	devOf = func(fi fs.FileInfo) uint64 {
+		if fi.Name() == "keep" && fi.IsDir() {
+			return realDev(fi) + 1
+		}
+		return realDev(fi)
+	}
+	beforeOpen = func(r *os.Root, name string) {
+		if name == "a" {
+			os.Rename(filepath.Join(root, "a"), filepath.Join(root, "a.old"))
+			os.Symlink("keep", filepath.Join(root, "a"))
+		}
+	}
+
+	Tree(root)
+
+	if gone(t, filepath.Join(root, "keep", "precious")) {
+		t.Fatal("a child swapped for a link led the walk into a skipped mount")
+	}
+}
+
+// A bind mount shares its source's device number, so the device check alone
+// cannot see it. The mount table can.
+func TestTreeDoesNotDescendIntoABindMount(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "cache")
+	mk(t, filepath.Join(root, "bind", "precious"))
+	mk(t, filepath.Join(root, "junk"))
+
+	real := mountPoints
+	t.Cleanup(func() { mountPoints = real })
+	canon, _ := filepath.EvalSymlinks(root)
+	mountPoints = func() []string { return []string{filepath.Join(canon, "bind")} }
+
+	out := Tree(root)
+
+	if gone(t, filepath.Join(root, "bind", "precious")) {
+		t.Fatal("the walk descended into a bind mount")
+	}
+	if !gone(t, filepath.Join(root, "junk")) || out.Err != nil {
+		t.Errorf("Outcome = %+v; siblings should go and the mount be skipped", out)
+	}
+}
+
+// Something else deleting part of the tree while it is walked (uv cache prune
+// running at the same time) is not a failure: the end state is what was asked.
+func TestTreeToleratesADirectoryThatVanishes(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "cache")
+	mk(t, filepath.Join(root, "sub", "f"))
+
+	real := beforeOpen
+	t.Cleanup(func() { beforeOpen = real })
+	beforeOpen = func(r *os.Root, name string) {
+		if name == "sub" {
+			os.RemoveAll(filepath.Join(root, "sub"))
+		}
+	}
+
+	out := Tree(root)
+
+	if out.Err != nil || !out.Gone {
+		t.Fatalf("Outcome = %+v, want the tree gone and no error", out)
+	}
+}

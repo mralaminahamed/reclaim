@@ -112,3 +112,19 @@ func TestMeasureCountsUnreadableSubtrees(t *testing.T) {
 		t.Errorf("Unreadable = 0, want the locked directory counted")
 	}
 }
+
+// Removal never enters a bind mount, so measuring must not count one either:
+// the two figures have to agree.
+func TestMeasureSkipsBindMounts(t *testing.T) {
+	root := t.TempDir()
+	fill(t, filepath.Join(root, "bind", "data"), 64<<10)
+	canon, _ := filepath.EvalSymlinks(root)
+
+	real := listMounts
+	t.Cleanup(func() { listMounts = real })
+	listMounts = func() []string { return []string{filepath.Join(canon, "bind")} }
+
+	if u := Measure([]string{root}); u.Allocated != 0 || u.Apparent != 0 {
+		t.Errorf("Measure = %+v, counted a bind mount's contents", u)
+	}
+}

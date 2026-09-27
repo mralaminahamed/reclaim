@@ -24,6 +24,9 @@ type Usage struct {
 
 type inode struct{ dev, ino uint64 }
 
+// listMounts is the mount table; a variable so a test can fake a bind mount.
+var listMounts = MountPoints
+
 type linked struct {
 	seen, nlink uint64
 	bytes       int64
@@ -37,6 +40,10 @@ type linked struct {
 func Measure(paths []string) Usage {
 	var u Usage
 	links := map[inode]*linked{}
+	mounts := map[string]bool{}
+	for _, m := range listMounts() {
+		mounts[m] = true
+	}
 	for _, root := range paths {
 		info, err := os.Lstat(root)
 		if err != nil {
@@ -46,6 +53,12 @@ func Measure(paths []string) Usage {
 			continue
 		}
 		rootSt, _ := statOf(info)
+		// The mount table names real paths; walk paths are lexical. Map one
+		// onto the other through the resolved root.
+		canon, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			canon = root
+		}
 		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
 				u.Unreadable++
@@ -58,8 +71,16 @@ func Measure(paths []string) Usage {
 			}
 			st, ok := statOf(fi)
 			if d.IsDir() {
+				// Another filesystem, or a bind mount of this one: removal
+				// leaves both alone, so they are not part of what it frees.
 				if ok && st.dev != rootSt.dev {
 					return fs.SkipDir
+				}
+				if p != root {
+					rel, _ := filepath.Rel(root, p)
+					if mounts[filepath.Join(canon, rel)] {
+						return fs.SkipDir
+					}
 				}
 				return nil
 			}
