@@ -10,6 +10,7 @@ import (
 	"github.com/mralaminahamed/reclaim/internal/discover"
 	"github.com/mralaminahamed/reclaim/internal/fsutil"
 	"github.com/mralaminahamed/reclaim/internal/installers"
+	"github.com/mralaminahamed/reclaim/internal/remove"
 	"github.com/mralaminahamed/reclaim/internal/unit"
 )
 
@@ -24,6 +25,9 @@ type Failure struct {
 type Summary struct {
 	Selected []*unit.Unit
 	Failed   []Failure
+	// Skipped entries were left in place on purpose: mount points, directories
+	// something re-populated mid-run. Not failures, but the user should know.
+	Skipped  []remove.Skip
 	Locked   []*unit.Unit
 	Withheld []*unit.Unit
 	// OptIn holds units that were not attempted only because their flag was
@@ -57,6 +61,9 @@ type jsonUnit struct {
 	LockedBy string   `json:"locked_by,omitempty"`
 	PID      int      `json:"pid,omitempty"`
 	Detail   []string `json:"detail,omitempty"`
+	// Measured marks a command unit: its figure after a run is the drop in
+	// free space, which other writers on the disk can disturb.
+	Measured bool `json:"measured,omitempty"`
 }
 
 // JSON writes a machine-readable summary.
@@ -77,6 +84,12 @@ func JSON(w io.Writer, s Summary) error {
 			"id": f.Unit.ID, "label": f.Unit.Label, "reason": f.Reason})
 	}
 	out["failed"] = failed
+
+	skipped := make([]map[string]any, 0, len(s.Skipped))
+	for _, sk := range s.Skipped {
+		skipped = append(skipped, map[string]any{"path": sk.Path, "reason": sk.Reason})
+	}
+	out["skipped"] = skipped
 
 	heavy := make([]map[string]any, 0, len(s.Heavy))
 	for _, h := range s.Heavy {
@@ -110,7 +123,7 @@ func JSON(w io.Writer, s Summary) error {
 func toJSON(us []*unit.Unit) []jsonUnit {
 	out := make([]jsonUnit, 0, len(us))
 	for _, u := range us {
-		out = append(out, jsonUnit{u.ID, u.Label, int(u.Tier), u.Bytes, u.Mount, u.Flag, u.LockedBy, u.PID, u.Detail})
+		out = append(out, jsonUnit{u.ID, u.Label, int(u.Tier), u.Bytes, u.Mount, u.Flag, u.LockedBy, u.PID, u.Detail, u.Kind == unit.KindCmd})
 	}
 	return out
 }
@@ -137,6 +150,13 @@ func Text(w io.Writer, s Summary) {
 		fmt.Fprintln(w, "\n== Failed ==")
 		for _, f := range s.Failed {
 			fmt.Fprintf(w, "  • %-38s %s\n", f.Unit.Label, f.Reason)
+		}
+	}
+
+	if len(s.Skipped) > 0 {
+		fmt.Fprintln(w, "\n== Skipped ==")
+		for _, sk := range s.Skipped {
+			fmt.Fprintf(w, "  • %s  (%s)\n", sk.Path, sk.Reason)
 		}
 	}
 

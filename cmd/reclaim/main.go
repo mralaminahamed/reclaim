@@ -24,6 +24,7 @@ import (
 	"github.com/mralaminahamed/reclaim/internal/oplog"
 	"github.com/mralaminahamed/reclaim/internal/plan"
 	"github.com/mralaminahamed/reclaim/internal/probe"
+	"github.com/mralaminahamed/reclaim/internal/remove"
 	"github.com/mralaminahamed/reclaim/internal/report"
 	"github.com/mralaminahamed/reclaim/internal/runner"
 	"github.com/mralaminahamed/reclaim/internal/scan"
@@ -304,6 +305,7 @@ func cmdClean(args []string) int {
 	var total int64
 	var ran []*unit.Unit
 	var failed []report.Failure
+	var skipped []remove.Skip
 	for _, res := range results {
 		if *apply {
 			entry := oplog.Entry{At: time.Now(), UnitID: res.Unit.ID, Label: res.Unit.Label,
@@ -313,6 +315,7 @@ func cmdClean(args []string) int {
 			}
 			_ = log.Append(entry)
 		}
+		skipped = append(skipped, res.Skipped...)
 		// A unit that errored is not a unit that reclaimed anything. Counting it
 		// under "Reclaimable" told the user space was freed when none was.
 		if res.Err != nil {
@@ -329,7 +332,7 @@ func cmdClean(args []string) int {
 	}
 
 	s := report.Summary{
-		Selected: ran, Failed: failed, Locked: locked, Withheld: withheld, OptIn: optIn,
+		Selected: ran, Failed: failed, Skipped: skipped, Locked: locked, Withheld: withheld, OptIn: optIn,
 		TotalBytes: total, DryRun: !*apply, StoppedEarly: r.StoppedEarly,
 	}
 	if *jsonOut {
