@@ -87,3 +87,14 @@ func TestFlatpakAppCachesAbsentWhenNoAppHasOne(t *testing.T) {
 		t.Error("registered a unit with nothing to clean")
 	}
 }
+
+// Lock detection parks a running flatpak app's cache, so the flag no longer
+// stands in for it: app caches are cleaned by default like any other cache.
+func TestFlatpakAppCachesRunByDefault(t *testing.T) {
+	home := t.TempDir()
+	mkdir(t, filepath.Join(home, ".var/app/com.example.One/cache"))
+	u, _ := Build(Env{Home: home, Has: hasFlatpak}).Get("flatpak-app-caches")
+	if u == nil || u.Flag != "" {
+		t.Fatalf("unit %+v, want registered with no flag", u)
+	}
+}

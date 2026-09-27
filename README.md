@@ -160,7 +160,7 @@ units additionally require `--allow-lossy`.
 | `--obsolete` | config left by removed-but-not-purged packages, rotated logs over 30 days old, directories of superseded JetBrains IDE versions |
 | `--trash` | the desktop trash — lossy |
 | `--models` | huggingface, torch, whisper and LM Studio model stores, Chrome's on-device AI model |
-| `--flatpak` | unused runtimes, and each app's sandboxed cache |
+| `--flatpak` | unused runtimes |
 | `--docker` | build cache, dangling images, unused networks |
 | `--docker-containers` | stopped containers, each named in the dry run — a stopped container can hold state nowhere else |
 | `--docker-volumes` | unused volumes — these may hold databases |
@@ -593,6 +593,12 @@ offered as lossy, behind `--site-data --allow-lossy`, because deleting it can
 log you out or make an app download everything again. While such an app runs it
 holds a `SingletonLock` naming its host and pid, and its caches are skipped even
 when the app is not in the lock table.
+
+A flatpak app runs sandboxed, and its command line names a path inside the
+sandbox, so the process table cannot say which app it is. Flatpak's own
+instance directory (`$XDG_RUNTIME_DIR/.flatpak/<instance>/info`) can. A running
+app's `~/.var/app/<id>/cache` moves out of the shared flatpak unit into a locked
+unit of its own, and every other app's cache is still cleaned by default.
 
 Discovery uses two different rules on purpose. Everything directly under
 `~/.cache` is regenerable by the XDG basedir spec, so it is claimed by *location*

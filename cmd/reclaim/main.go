@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -240,6 +241,10 @@ func cmdClean(args []string) int {
 	// which covers the ones the rule table does not name.
 	host, _ := os.Hostname()
 	lock.Singletons(reg, host, lock.Alive)
+	// Flatpak apps run sandboxed, so the process table cannot name them;
+	// flatpak's own instance directory can.
+	lock.Flatpak(reg, filepath.Join(home, ".var", "app"),
+		lock.FlatpakRunning(runtimeDir(), lock.Alive))
 
 	opts := plan.Options{
 		TierCap:    unit.Tier(*tier),
@@ -507,4 +512,12 @@ func heavyThreshold(getenv func(string) string) int64 {
 		return discover.HeavyThreshold
 	}
 	return n
+}
+
+// runtimeDir is $XDG_RUNTIME_DIR, or the systemd default when it is unset.
+func runtimeDir() string {
+	if d := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(d) {
+		return d
+	}
+	return filepath.Join("/run/user", strconv.Itoa(os.Getuid()))
 }
