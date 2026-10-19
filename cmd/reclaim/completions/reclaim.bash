@@ -47,7 +47,7 @@ _reclaim() {
                 --mise --asdf --android-avd --podman --podman-containers --podman-volumes --orbstack --colima --lima" -- "$cur") )
             ;;
         analyze)
-            COMPREPLY=( $(compgen -W "--min --installers --older --apps --idle --json" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--min --installers --older --apps --idle --remove --json" -- "$cur") )
             ;;
         history)
             COMPREPLY=( $(compgen -W "-n" -- "$cur") )

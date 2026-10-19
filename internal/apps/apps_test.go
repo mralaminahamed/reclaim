@@ -250,3 +250,124 @@ func TestLocalAppFollowsSymlinksIntoOpt(t *testing.T) {
 		t.Errorf("got %+v", got)
 	}
 }
+
+// /usr/local/<name> is as much an app's own directory as /opt/<name>: Android
+// Studio unpacks there, and naming only its launcher leaves gigabytes behind.
+func TestLocalAppUnderUsrLocalNamesItsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	desktop(t, dir, "android-studio.desktop",
+		app("Android Studio", "/usr/local/android-studio/bin/studio"))
+	env := Env{
+		Home: t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
+		Used: func(string) (time.Time, bool) { return now.Add(-400 * day), true },
+		DirBytes: func(p string) int64 {
+			if p == "/usr/local/android-studio" {
+				return 3 << 30
+			}
+			return 0
+		},
+	}
+	got := Find(env, 90*day).Apps
+	if len(got) != 1 || got[0].Bytes != 3<<30 || got[0].Dir != "/usr/local/android-studio" {
+		t.Fatalf("got %+v", got)
+	}
+	if !strings.HasPrefix(got[0].Remove, "sudo rm -rf /usr/local/android-studio && rm ") {
+		t.Errorf("remove = %q", got[0].Remove)
+	}
+}
+
+// /usr/local/bin and friends are shared by every local tool; an app whose
+// binary sits directly in one must never be mistaken for owning it.
+func TestLocalAppInSharedUsrLocalDirOnlyNamesLauncher(t *testing.T) {
+	for _, bin := range []string{"/usr/local/bin/tool", "/usr/local/share/x/tool", "/usr/local/lib/tool"} {
+		dir := t.TempDir()
+		desktop(t, dir, "tool.desktop", app("Tool", bin))
+		env := Env{
+			Home: t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
+			Used: func(string) (time.Time, bool) { return now.Add(-400 * day), true },
+		}
+		got := Find(env, 90*day).Apps
+		if len(got) != 1 || got[0].Dir != "" || strings.Contains(got[0].Remove, "rm -rf") {
+			t.Errorf("%s: got %+v", bin, got)
+		}
+	}
+}
+
+// Removal is run, so it is steps with an argv each, never a shell string.
+func TestStepsMirrorRemoveHint(t *testing.T) {
+	envD, dirD := debEnv(t, map[string]time.Duration{"/usr/bin/shotwell": 200 * day})
+	desktop(t, dirD, "shotwell.desktop", app("Shotwell", "shotwell"))
+	d := Find(envD, 90*day).Apps
+	if len(d) != 1 || len(d[0].Steps) != 1 ||
+		strings.Join(d[0].Steps[0].Argv, " ") != "apt remove shotwell" || !d[0].Steps[0].Root {
+		t.Fatalf("deb steps %+v", d)
+	}
+
+	dir := t.TempDir()
+	l := desktop(t, dir, "Postman.desktop", app("Postman", "/opt/Postman/app/Postman %U"))
+	env := Env{
+		Home: t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
+		Used:     func(string) (time.Time, bool) { return now.Add(-400 * day), true },
+		DirBytes: func(string) int64 { return 1 },
+	}
+	got := Find(env, 90*day).Apps
+	if len(got) != 1 || len(got[0].Steps) != 2 ||
+		strings.Join(got[0].Steps[0].Argv, " ") != "rm -rf /opt/Postman" || !got[0].Steps[0].Root ||
+		strings.Join(got[0].Steps[1].Argv, " ") != "rm "+l || got[0].Steps[1].Root {
+		t.Errorf("local steps %+v", got)
+	}
+}
+
+// What an app left behind is named and sized, never selected for removal.
+func TestLeftoversFindsKnownPlacesOnly(t *testing.T) {
+	home := t.TempDir()
+	for _, d := range []string{".config/Postman", ".cache/postman", ".local/share/Unrelated", ".postman"} {
+		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := Env{Home: home, DirBytes: func(string) int64 { return 5 }}
+	got := Leftovers(env, App{Name: "Postman", Package: "/x/Postman.desktop", Dir: "/opt/Postman"})
+	var paths []string
+	for _, l := range got {
+		paths = append(paths, strings.TrimPrefix(l.Path, home+"/"))
+		if l.Bytes != 5 {
+			t.Errorf("%s bytes %d", l.Path, l.Bytes)
+		}
+	}
+	want := ".cache/postman .config/Postman .postman"
+	if strings.Join(paths, " ") != want {
+		t.Errorf("got %v want %s", paths, want)
+	}
+}
+
+// A package literally named "x" must not claim ~/.config/x for an app whose
+// name merely contains it, and a candidate is never a path escape.
+func TestLeftoversIgnoresPathyNames(t *testing.T) {
+	home := t.TempDir()
+	env := Env{Home: home, DirBytes: func(string) int64 { return 1 }}
+	if got := Leftovers(env, App{Name: "../../etc", Package: "a/b"}); len(got) != 0 {
+		t.Errorf("got %+v", got)
+	}
+}
+
+// IDEs keep versioned data one level down, under their vendor's directory.
+func TestLeftoversFindsVersionedDirUnderVendor(t *testing.T) {
+	home := t.TempDir()
+	for _, d := range []string{".config/Google/AndroidStudio2026.1.3", ".local/share/Google/AndroidStudio2026.1.3",
+		".config/Google/Chrome", ".config/Google/AndroidStudioPreview", ".config/JetBrains/Other1.0"} {
+		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := Env{Home: home, DirBytes: func(string) int64 { return 1 }}
+	got := Leftovers(env, App{Name: "Android Studio", Dir: "/usr/local/android-studio"})
+	var paths []string
+	for _, l := range got {
+		paths = append(paths, strings.TrimPrefix(l.Path, home+"/"))
+	}
+	want := ".config/Google/AndroidStudio2026.1.3 .local/share/Google/AndroidStudio2026.1.3"
+	if strings.Join(paths, " ") != want {
+		t.Errorf("got %v want %s", paths, want)
+	}
+}

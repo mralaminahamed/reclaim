@@ -70,6 +70,7 @@ complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l installers -d 'a
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l older -r -d 'days before an installer is stale'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l apps -d 'also report applications unused for a long time'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l idle -r -d 'days unused before an app is reported'
+complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l remove -d 'choose idle apps to uninstall, interactive'
 complete -c reclaim -n '__fish_seen_subcommand_from analyze' -l json -d 'machine-readable output'
 complete -c reclaim -n '__fish_seen_subcommand_from history' -s n -r -d 'how many entries'
 complete -c reclaim -n '__fish_seen_subcommand_from index' -l full -d 're-read every directory instead of only changed ones'
