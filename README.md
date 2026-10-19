@@ -409,7 +409,7 @@ neither does whatever it kept.
 number, see the exact commands, and confirm; each command is then run as an argv
 list (never through a shell), and only `apt remove`, `snap remove`,
 `flatpak uninstall`, `rm -rf` of an app's own directory and `rm` of a launcher
-are accepted. An app that fails to uninstall is not touched further. Afterwards
+are accepted. A directory any installed package has files in is never removed with `rm`: that app is reduced to its launcher and the package manager is the way to remove it. An app that fails to uninstall is not touched further. Afterwards
 the app's data in your home (`~/.config`, `~/.cache`, `~/.local/share`, vendor
 folders like `Google/AndroidStudio<version>`) is listed and deleted only on a
 second, separate yes that defaults to no.

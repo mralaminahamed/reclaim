@@ -24,7 +24,7 @@ func FindIdle(home string, idle time.Duration) Result {
 
 // DefaultEnv returns an Env for this machine.
 func DefaultEnv(home string) Env {
-	owners := dpkgOwners()
+	owners, packaged := dpkgOwners()
 	auto := aptAuto()
 	mounts := atimeMounts()
 	return Env{
@@ -39,6 +39,7 @@ func DefaultEnv(home string) Env {
 			{filepath.Join(home, ".local/share/applications"), Local},
 		},
 		Owner:    func(p string) string { return owners[p] },
+		Packaged: func(d string) bool { return packaged[d] },
 		Auto:     func(pkg string) bool { return auto[pkg] },
 		PkgBytes: func(src Source, pkg string) int64 { return pkgBytes(home, src, pkg) },
 		Used:     func(p string) (time.Time, bool) { return atime(p, mounts) },
@@ -52,8 +53,11 @@ func DefaultEnv(home string) Env {
 
 // dpkgOwners maps each installed launcher to its package, read from dpkg's
 // file lists in one pass rather than a dpkg -S per file.
-func dpkgOwners() map[string]string {
+// It also returns the /opt and /usr/local application directories any package
+// has files in, which are not safe to remove with rm.
+func dpkgOwners() (map[string]string, map[string]bool) {
 	out := map[string]string{}
+	packaged := map[string]bool{}
 	lists, _ := filepath.Glob("/var/lib/dpkg/info/*.list")
 	for _, l := range lists {
 		pkg := strings.TrimSuffix(filepath.Base(l), ".list")
@@ -65,13 +69,16 @@ func dpkgOwners() map[string]string {
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {
 			line := sc.Text()
+			if d := OwnedDir(line + "/x"); d != "" {
+				packaged[d] = true
+			}
 			if strings.HasSuffix(line, ".desktop") && strings.Contains(line, "/applications/") {
 				out[line] = pkg
 			}
 		}
 		f.Close()
 	}
-	return out
+	return out, packaged
 }
 
 // aptNeeded reports whether any installed package depends on, or recommends,

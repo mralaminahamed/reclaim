@@ -98,6 +98,10 @@ type Env struct {
 	DirBytes func(path string) int64
 	// LookPath resolves a bare command name.
 	LookPath func(name string) (string, error)
+	// Packaged reports whether an installed package owns files under dir.
+	// Such a directory is the package manager's to remove, never a root rm.
+	// Unset means unknown, which is treated as packaged.
+	Packaged func(dir string) bool
 	// ShellSeen is the desktop shell's own record of when each app was last
 	// seen running, keyed by desktop file name.
 	ShellSeen map[string]time.Time
@@ -216,7 +220,11 @@ func identify(env Env, src Source, e entry) (App, string, bool) {
 		app.Package = e.file
 		app.Steps = []Step{{Argv: []string{"rm", e.file}}}
 		// /usr/bin/Postman -> /opt/Postman/Postman: the link is not the app.
-		if dir := OwnedDir(follow(resolve(env, e.exec))); dir != "" {
+		dir := OwnedDir(follow(resolve(env, e.exec)))
+		if dir != "" && (env.Packaged == nil || env.Packaged(dir)) {
+			dir = ""
+		}
+		if dir != "" {
 			app.Dir = dir
 			app.Steps = []Step{
 				{Argv: []string{"rm", "-rf", dir}, Root: true},

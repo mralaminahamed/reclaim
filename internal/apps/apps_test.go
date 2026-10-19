@@ -215,7 +215,8 @@ func TestLocalAppUnderOptNamesItsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	desktop(t, dir, "Postman.desktop", app("Postman", "/opt/Postman/app/Postman %U"))
 	env := Env{
-		Home: t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
+		Packaged: func(string) bool { return false },
+		Home:     t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
 		Used: func(string) (time.Time, bool) { return now.Add(-400 * day), true },
 		DirBytes: func(p string) int64 {
 			if p == "/opt/Postman" {
@@ -240,7 +241,8 @@ func TestLocalAppFollowsSymlinksIntoOpt(t *testing.T) {
 	dir := t.TempDir()
 	desktop(t, dir, "Postman.desktop", app("Postman", "Postman"))
 	env := Env{
-		Home: t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
+		Packaged: func(string) bool { return false },
+		Home:     t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
 		LookPath: func(string) (string, error) { return bin, nil },
 		Used:     func(string) (time.Time, bool) { return now.Add(-400 * day), true },
 		DirBytes: func(string) int64 { return 1 },
@@ -258,7 +260,8 @@ func TestLocalAppUnderUsrLocalNamesItsDirectory(t *testing.T) {
 	desktop(t, dir, "android-studio.desktop",
 		app("Android Studio", "/usr/local/android-studio/bin/studio"))
 	env := Env{
-		Home: t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
+		Packaged: func(string) bool { return false },
+		Home:     t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
 		Used: func(string) (time.Time, bool) { return now.Add(-400 * day), true },
 		DirBytes: func(p string) int64 {
 			if p == "/usr/local/android-studio" {
@@ -306,7 +309,8 @@ func TestStepsMirrorRemoveHint(t *testing.T) {
 	dir := t.TempDir()
 	l := desktop(t, dir, "Postman.desktop", app("Postman", "/opt/Postman/app/Postman %U"))
 	env := Env{
-		Home: t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
+		Packaged: func(string) bool { return false },
+		Home:     t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
 		Used:     func(string) (time.Time, bool) { return now.Add(-400 * day), true },
 		DirBytes: func(string) int64 { return 1 },
 	}
@@ -369,5 +373,28 @@ func TestLeftoversFindsVersionedDirUnderVendor(t *testing.T) {
 	want := ".config/Google/AndroidStudio2026.1.3 .local/share/Google/AndroidStudio2026.1.3"
 	if strings.Join(paths, " ") != want {
 		t.Errorf("got %v want %s", paths, want)
+	}
+}
+
+// A package owns its files; deleting them behind its back leaves dpkg
+// believing they exist. A launcher cannot talk its way into a root rm -rf of a
+// packaged directory, whatever its Exec line says.
+func TestLocalAppInPackagedDirOnlyNamesLauncher(t *testing.T) {
+	dir := t.TempDir()
+	desktop(t, dir, "chrome.desktop", app("Chrome", "/opt/google/chrome/chrome"))
+	env := Env{
+		Home: t.TempDir(), Now: now, Dirs: []Dir{{Path: dir, Source: Local}},
+		Used:     func(string) (time.Time, bool) { return now.Add(-400 * day), true },
+		DirBytes: func(string) int64 { return 1 },
+		Packaged: func(d string) bool { return d == "/opt/google" },
+	}
+	got := Find(env, 90*day).Apps
+	if len(got) != 1 || got[0].Dir != "" {
+		t.Fatalf("got %+v", got)
+	}
+	for _, s := range got[0].Steps {
+		if s.Root || strings.Contains(strings.Join(s.Argv, " "), "-rf") {
+			t.Errorf("privileged step for a packaged dir: %+v", s)
+		}
 	}
 }
