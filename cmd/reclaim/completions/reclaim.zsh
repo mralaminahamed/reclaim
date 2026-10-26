@@ -20,7 +20,8 @@ _reclaim() {
     )
     groups=(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes
             steam-compatdata timemachine site-data claude-vm system claude-jobs claude-plugins claude-history
-            heavy flatpak kernels models xcode simulators obsolete trash)
+            heavy flatpak kernels models xcode simulators obsolete trash
+            mise asdf android-avd podman podman-containers podman-volumes orbstack colima lima)
     clean_flags=(
         '--apply[actually delete]'
         '--yes[do not prompt]'
@@ -33,10 +34,10 @@ _reclaim() {
         '--json[machine-readable output]'
         '--workers[parallel probe workers]:count'
         '--sites-idle[include trees of projects idle N days]:days'
-        '--sites-root[where projects live]:directory:_files -/'
+        '*--sites-root[where projects live]:directory:_files -/'
         '--only[restrict to these unit ids]:unit:_reclaim_units'
         '--exclude[drop these unit ids]:unit:_reclaim_units'
-        '--with[opt-in flag by name]:group:(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes steam-compatdata timemachine site-data claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash)'
+        '--with[opt-in flag by name]:group:(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes steam-compatdata timemachine site-data claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash mise asdf android-avd podman podman-containers podman-volumes orbstack colima lima)'
         '--gradle[opt in to gradle units]'
         '--maven[opt in to maven units]'
         '--jetbrains[opt in to jetbrains units]'
@@ -61,6 +62,15 @@ _reclaim() {
         '--simulators[opt in to simulator devices]'
         '--obsolete[opt in to leftover config and old rotated logs]'
         '--trash[opt in to emptying the trash]'
+        '--mise[opt in to mise installed tools]'
+        '--asdf[opt in to asdf installed tools]'
+        '--android-avd[opt in to Android emulator devices]'
+        '--podman[opt in to podman units]'
+        '--podman-containers[opt in to removing stopped podman containers]'
+        '--podman-volumes[opt in to podman volume units]'
+        '--orbstack[opt in to the OrbStack VM disk]'
+        '--colima[opt in to the Colima VM disk]'
+        '--lima[opt in to Lima VM disks]'
     )
 
     if (( CURRENT == 2 )); then

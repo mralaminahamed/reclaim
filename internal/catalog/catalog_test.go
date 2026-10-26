@@ -164,6 +164,111 @@ func TestEveryUnitHasIDLabelAndTier(t *testing.T) {
 	}
 }
 
+// Cross-language version manager download caches are safe to clear any time,
+// so they need no flag; what they install is costly to redo, so that half is
+// opt-in and classified TierColdReload, the same split hf-prune/hf-cache
+// draws for model stores.
+func TestVersionManagerCachesVsInstallsSplit(t *testing.T) {
+	home := t.TempDir()
+	mkdir(t, filepath.Join(home, ".cache/mise"))
+	mkdir(t, filepath.Join(home, ".local/share/mise/installs"))
+	mkdir(t, filepath.Join(home, ".asdf/downloads"))
+	mkdir(t, filepath.Join(home, ".asdf/installs"))
+	mkdir(t, filepath.Join(home, ".rustup/downloads"))
+	mkdir(t, filepath.Join(home, ".volta/cache"))
+	r := Build(Env{Home: home, Has: func(string) bool { return false }})
+
+	for _, tc := range []struct {
+		id         string
+		flag       string
+		tier       unit.Tier
+		reversible bool
+	}{
+		{"mise-cache", "", unit.TierPkgCache, true},
+		{"mise-installs", "--mise", unit.TierColdReload, true},
+		{"asdf-downloads", "", unit.TierPkgCache, true},
+		{"asdf-installs", "--asdf", unit.TierColdReload, true},
+		{"rustup-downloads", "", unit.TierPkgCache, true},
+		{"volta-cache", "", unit.TierPkgCache, true},
+	} {
+		u, ok := r.Get(tc.id)
+		if !ok {
+			t.Errorf("%s not registered though its path exists", tc.id)
+			continue
+		}
+		if u.Flag != tc.flag {
+			t.Errorf("%s flag = %q, want %q", tc.id, u.Flag, tc.flag)
+		}
+		if u.Tier != tc.tier {
+			t.Errorf("%s tier = %v, want %v", tc.id, u.Tier, tc.tier)
+		}
+		if u.Reversible != tc.reversible {
+			t.Errorf("%s reversible = %v, want %v", tc.id, u.Reversible, tc.reversible)
+		}
+	}
+}
+
+// rustup renames ~/.rustup/tmp into toolchains/ mid-install, so unlike every
+// other download cache this tool clears, it must never be swept -- there is
+// no lock rule that could tell an in-flight install apart from an idle one.
+func TestRustupTmpIsNeverClaimed(t *testing.T) {
+	home := t.TempDir()
+	mkdir(t, filepath.Join(home, ".rustup/tmp"))
+	r := Build(Env{Home: home, Has: func(string) bool { return false }})
+	for _, u := range r.All() {
+		for _, p := range u.Paths {
+			if strings.Contains(p, filepath.Join(".rustup", "tmp")) {
+				t.Errorf("unit %q claims .rustup/tmp: %q", u.ID, p)
+			}
+		}
+	}
+}
+
+func TestAndroidCacheIsUnflagged(t *testing.T) {
+	home := t.TempDir()
+	mkdir(t, filepath.Join(home, ".android/cache"))
+	r := Build(Env{Home: home, Has: func(string) bool { return false }})
+	u, ok := r.Get("android-cache")
+	if !ok {
+		t.Fatal("android-cache not registered")
+	}
+	if u.Flag != "" || !u.Reversible {
+		t.Errorf("flag %q reversible %v", u.Flag, u.Reversible)
+	}
+}
+
+// A VM disk kept by a Docker Desktop alternative can hold a database nowhere
+// else, same claim docker-volumes makes, so each gets its own flag and stays
+// irreversible.
+func TestMacVMDisksAreIrreplaceableAndOptIn(t *testing.T) {
+	home := t.TempDir()
+	mkdir(t, filepath.Join(home, ".orbstack/data"))
+	mkdir(t, filepath.Join(home, ".colima"))
+	mkdir(t, filepath.Join(home, ".lima"))
+	r := Build(Env{Home: home, Has: func(string) bool { return false }})
+
+	for _, tc := range []struct{ id, flag string }{
+		{"orbstack-vm", "--orbstack"},
+		{"colima-vm", "--colima"},
+		{"lima-vm", "--lima"},
+	} {
+		u, ok := r.Get(tc.id)
+		if !ok {
+			t.Errorf("%s not registered though its path exists", tc.id)
+			continue
+		}
+		if u.Flag != tc.flag {
+			t.Errorf("%s flag = %q, want %q", tc.id, u.Flag, tc.flag)
+		}
+		if u.Reversible {
+			t.Errorf("%s marked reversible; a VM disk may hold a database nowhere else", tc.id)
+		}
+		if u.Tier != unit.TierIrreplaceable {
+			t.Errorf("%s tier = %v, want TierIrreplaceable", tc.id, u.Tier)
+		}
+	}
+}
+
 func mkdir(t *testing.T, p string) {
 	t.Helper()
 	if err := os.MkdirAll(p, 0o755); err != nil {

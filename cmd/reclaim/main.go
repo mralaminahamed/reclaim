@@ -97,7 +97,9 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 var optInFlags = []string{"gradle", "maven", "jetbrains", "browsers", "playwright",
 	"docker", "docker-containers", "docker-volumes", "claude-vm", "system", "claude-jobs", "claude-plugins",
 	"claude-history", "heavy", "flatpak", "kernels", "models", "xcode", "simulators",
-	"obsolete", "trash", "steam-compatdata", "timemachine", "site-data"}
+	"obsolete", "trash", "steam-compatdata", "timemachine", "site-data",
+	"mise", "asdf", "android-avd",
+	"podman", "podman-containers", "podman-volumes", "orbstack", "colima", "lima"}
 
 func cmdClean(args []string) int {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
@@ -113,11 +115,12 @@ func cmdClean(args []string) int {
 		jsonOut    = fs.Bool("json", false, "machine-readable output")
 		workers    = fs.Int("workers", runtime.NumCPU(), "parallel probe workers")
 		sitesIdle  = fs.Int("sites-idle", 0, "include dependency trees of projects idle this many days")
-		sitesRoot  = fs.String("sites-root", "", "where projects live (default ~/Sites)")
+		sitesRoot  multiFlag
 		only       multiFlag
 		exclude    multiFlag
 		flags      multiFlag
 	)
+	fs.Var(&sitesRoot, "sites-root", "where projects live (default ~/Sites; repeatable)")
 	fs.Var(&only, "only", "restrict the run to these unit ids or globs (repeatable)")
 	fs.Var(&exclude, "exclude", "drop these unit ids or globs (repeatable)")
 	fs.Var(&flags, "with", "opt-in flag such as --gradle, passed as --with gradle (repeatable)")
@@ -150,7 +153,7 @@ func cmdClean(args []string) int {
 		*jsonOut = *cfg.JSON
 	}
 	if cfg.SitesRoot != "" && !given["sites-root"] {
-		*sitesRoot = cfg.SitesRoot
+		sitesRoot = multiFlag{cfg.SitesRoot}
 	}
 	if len(cfg.Only) > 0 && !given["only"] {
 		only = cfg.Only
@@ -216,16 +219,19 @@ func cmdClean(args []string) int {
 		system.Add(reg, system.DefaultEnv())
 	}
 	if *sitesIdle > 0 {
-		root := *sitesRoot
-		if root == "" {
-			root = filepath.Join(home, "Sites")
+		roots := []string(sitesRoot)
+		if len(roots) == 0 {
+			roots = []string{filepath.Join(home, "Sites")}
 		}
-		scan.IdleProjects(reg, root, *sitesIdle)
+		for _, root := range roots {
+			scan.IdleProjects(reg, root, *sitesIdle)
+		}
 	}
 	if *doDiscover {
 		discover.XDGCaches(reg, discover.CacheRootFrom(home, os.Getenv))
 		discover.NestedCaches(reg, discover.NestedRootsFrom(home, os.Getenv))
 		discover.ChromiumCaches(reg, discover.NestedRootsFrom(home, os.Getenv))
+		discover.SandboxedCaches(reg, discover.SandboxRoots(home))
 	}
 	// Offered whether or not --discover is given: the unit does nothing
 	// without --site-data, and it is lossy, so --allow-lossy as well.
