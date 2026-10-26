@@ -400,9 +400,19 @@ back to them, so `analyze` run as that user finds it.
 ### Unused applications
 
 `reclaim analyze --apps` lists desktop applications not used in 90 days
-(`--idle N` to change that), each with the command that would remove it. It
-removes nothing: an uninstalled app does not come back by itself, and neither
-does whatever it kept.
+(`--idle N` to change that), each with the command that would remove it. On its
+own it removes nothing: an uninstalled app does not come back by itself, and
+neither does whatever it kept.
+
+`--apps --remove` turns the list into a menu. It needs a terminal, refuses
+`--json`, and is never part of `clean`, `--auto` or the timer. You pick apps by
+number, see the exact commands, and confirm; each command is then run as an argv
+list (never through a shell), and only `apt remove`, `snap remove`,
+`flatpak uninstall`, `rm -rf` of an app's own directory and `rm` of a launcher
+are accepted. A directory any installed package has files in is never removed with `rm`: that app is reduced to its launcher and the package manager is the way to remove it. An app that fails to uninstall is not touched further. Afterwards
+the app's data in your home (`~/.config`, `~/.cache`, `~/.local/share`, vendor
+folders like `Google/AndroidStudio<version>`) is listed and deleted only on a
+second, separate yes that defaults to no.
 
 An app is only listed on evidence, and every signal used can err one way only —
 towards "used":

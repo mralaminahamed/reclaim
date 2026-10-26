@@ -431,6 +431,7 @@ func cmdAnalyze(args []string) int {
 	older := fs.Int("older", 90, "how many days old an installer must be to be stale")
 	idleApps := fs.Bool("apps", false, "also report applications unused for a long time")
 	idle := fs.Int("idle", 90, "how many days unused an application must be to be reported")
+	remove := fs.Bool("remove", false, "with --apps: choose idle applications to uninstall (interactive)")
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -439,6 +440,22 @@ func cmdAnalyze(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
+	}
+	if *remove {
+		// Uninstalling is not undoable, so it needs a person at a terminal
+		// answering for each run -- never a pipe, a timer or a report format.
+		if !*idleApps {
+			fmt.Fprintln(os.Stderr, "--remove needs --apps")
+			return 2
+		}
+		if *asJSON {
+			fmt.Fprintln(os.Stderr, "--remove is interactive and cannot be combined with --json")
+			return 2
+		}
+		if fi, err := os.Stdin.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+			fmt.Fprintln(os.Stderr, "--remove needs an interactive terminal")
+			return 2
+		}
 	}
 	home, _ := os.UserHomeDir()
 	// A fresh index answers in milliseconds what a walk of the home directory
@@ -474,6 +491,9 @@ func cmdAnalyze(args []string) int {
 		return 0
 	}
 	report.Text(os.Stdout, sum)
+	if *remove {
+		return removeApps(os.Stdin, os.Stdout, sum.Apps, apps.DefaultEnv(home), runStep, os.RemoveAll)
+	}
 	return 0
 }
 

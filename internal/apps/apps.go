@@ -39,8 +39,33 @@ type App struct {
 	Package  string
 	Bytes    int64
 	LastUsed time.Time
-	// Remove is the command that would uninstall it. Shown, never run.
+	// Dir is the directory a hand-installed app owns outright, or "".
+	Dir string
+	// Remove is the command that would uninstall it, for display.
 	Remove string
+	// Steps are the same removal as argv lists, run in order only by an
+	// explicit, confirmed request. Never built from a shell string.
+	Steps []Step
+}
+
+// Step is one command of a removal.
+type Step struct {
+	Argv []string
+	// Root says the command needs privilege; the caller supplies it.
+	Root bool
+}
+
+// hint renders steps as the one-line command shown in a report.
+func hint(steps []Step) string {
+	parts := make([]string, 0, len(steps))
+	for _, s := range steps {
+		c := strings.Join(s.Argv, " ")
+		if s.Root {
+			c = "sudo " + c
+		}
+		parts = append(parts, c)
+	}
+	return strings.Join(parts, " && ")
 }
 
 // Dir is a directory of .desktop entries and the source that owns them.
@@ -73,6 +98,10 @@ type Env struct {
 	DirBytes func(path string) int64
 	// LookPath resolves a bare command name.
 	LookPath func(name string) (string, error)
+	// Packaged reports whether an installed package owns files under dir.
+	// Such a directory is the package manager's to remove, never a root rm.
+	// Unset means unknown, which is treated as packaged.
+	Packaged func(dir string) bool
 	// ShellSeen is the desktop shell's own record of when each app was last
 	// seen running, keyed by desktop file name.
 	ShellSeen map[string]time.Time
@@ -175,35 +204,38 @@ func identify(env Env, src Source, e entry) (App, string, bool) {
 			return app, "", false
 		}
 		app.Package = pkg
-		app.Remove = "sudo apt remove " + pkg
+		app.Steps = []Step{{Argv: []string{"apt", "remove", pkg}, Root: true}}
 	case Snap:
 		// snapd names launchers "<snap>_<app>.desktop".
 		name, _, _ := strings.Cut(base, "_")
 		app.Package = name
-		app.Remove = "sudo snap remove " + name
+		app.Steps = []Step{{Argv: []string{"snap", "remove", name}, Root: true}}
 	case Flatpak:
 		app.Package = base
-		app.Remove = "flatpak uninstall " + base
+		app.Steps = []Step{{Argv: []string{"flatpak", "uninstall", base}}}
 	case Local:
 		// A hand-installed app is a launcher plus whatever it starts. Under
-		// /opt that is the app's own directory; anywhere else only the
-		// launcher is named, since its target may be shared.
+		// /opt or /usr/local/<name> that is the app's own directory; anywhere
+		// else only the launcher is named, since its target may be shared.
 		app.Package = e.file
-		app.Remove = "rm " + e.file
-		bin := resolve(env, e.exec)
+		app.Steps = []Step{{Argv: []string{"rm", e.file}}}
 		// /usr/bin/Postman -> /opt/Postman/Postman: the link is not the app.
-		bin = follow(bin)
-		if strings.HasPrefix(bin, "/opt/") {
-			top := strings.SplitN(strings.TrimPrefix(bin, "/opt/"), "/", 2)[0]
-			if top != "" {
-				dir := "/opt/" + top
-				app.Remove = "sudo rm -rf " + dir + " && rm " + e.file
-				if env.DirBytes != nil {
-					app.Bytes = env.DirBytes(dir)
-				}
+		dir := OwnedDir(follow(resolve(env, e.exec)))
+		if dir != "" && (env.Packaged == nil || env.Packaged(dir)) {
+			dir = ""
+		}
+		if dir != "" {
+			app.Dir = dir
+			app.Steps = []Step{
+				{Argv: []string{"rm", "-rf", dir}, Root: true},
+				{Argv: []string{"rm", e.file}},
+			}
+			if env.DirBytes != nil {
+				app.Bytes = env.DirBytes(dir)
 			}
 		}
 	}
+	app.Remove = hint(app.Steps)
 	return app, string(src) + ":" + app.Package, true
 }
 
@@ -335,4 +367,132 @@ func follow(p string) string {
 		p = t
 	}
 	return p
+}
+
+// sharedLocal are the /usr/local directories every local tool shares. A binary
+// directly inside one belongs to no app of its own.
+var sharedLocal = map[string]bool{
+	"bin": true, "sbin": true, "lib": true, "lib64": true, "libexec": true,
+	"share": true, "etc": true, "include": true, "src": true, "man": true,
+	"games": true, "opt": true,
+}
+
+// OwnedDir is the top directory of a hand-installed app that bin lives in:
+// /opt/<name> or /usr/local/<name>. It is "" for anything else, including a
+// binary that merely sits in a shared directory.
+func OwnedDir(bin string) string {
+	if !filepath.IsAbs(bin) {
+		return ""
+	}
+	for _, root := range []string{"/opt/", "/usr/local/"} {
+		rest, ok := strings.CutPrefix(bin, root)
+		if !ok {
+			continue
+		}
+		top, tail, _ := strings.Cut(rest, "/")
+		// A file straight in the root has no directory of its own.
+		if top == "" || tail == "" || top == "." || top == ".." {
+			return ""
+		}
+		if root == "/usr/local/" && sharedLocal[top] {
+			return ""
+		}
+		return root + top
+	}
+	return ""
+}
+
+// Leftover is data an app kept in the user's home. Reported, never removed.
+type Leftover struct {
+	Path  string
+	Bytes int64
+}
+
+// Leftovers names the places an app commonly keeps its own data, when they
+// exist. Only an exact (case-insensitive) match on the app's name, package or
+// install directory counts, so one app is never blamed for another's data.
+func Leftovers(env Env, a App) []Leftover {
+	seen := map[string]bool{}
+	var cands []string
+	add := func(c string) {
+		c = strings.TrimSpace(c)
+		if c == "" || c == "." || c == ".." || strings.ContainsAny(c, "/\\") || seen[strings.ToLower(c)] {
+			return
+		}
+		seen[strings.ToLower(c)] = true
+		cands = append(cands, c)
+	}
+	add(a.Name)
+	add(strings.ReplaceAll(a.Name, " ", ""))
+	if a.Source != Local {
+		add(a.Package)
+	}
+	if a.Dir != "" {
+		add(filepath.Base(a.Dir))
+	}
+
+	roots := []string{".config", ".cache", ".local/share", ".var/app", "snap"}
+	var out []Leftover
+	for _, root := range roots {
+		entries, err := os.ReadDir(filepath.Join(env.Home, root))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if matches(cands, e.Name()) {
+				out = append(out, leftover(env, filepath.Join(env.Home, root, e.Name())))
+			}
+		}
+	}
+	// Versioned data lives under the vendor: Google/AndroidStudio2026.1.3. Only
+	// "<name><digit>..." counts, so AndroidStudioPreview is not claimed.
+	for _, root := range []string{".config", ".cache", ".local/share"} {
+		for _, vendor := range []string{"Google", "JetBrains"} {
+			entries, err := os.ReadDir(filepath.Join(env.Home, root, vendor))
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				if versioned(cands, e.Name()) {
+					out = append(out, leftover(env, filepath.Join(env.Home, root, vendor, e.Name())))
+				}
+			}
+		}
+	}
+	entries, _ := os.ReadDir(env.Home)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") && matches(cands, e.Name()[1:]) {
+			out = append(out, leftover(env, filepath.Join(env.Home, e.Name())))
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
+
+// versioned reports whether name is a candidate followed by a version number.
+func versioned(cands []string, name string) bool {
+	for _, c := range cands {
+		if len(name) > len(c) && strings.EqualFold(name[:len(c)], c) &&
+			name[len(c)] >= '0' && name[len(c)] <= '9' {
+			return true
+		}
+	}
+	return false
+}
+
+func matches(cands []string, name string) bool {
+	for _, c := range cands {
+		if strings.EqualFold(c, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func leftover(env Env, path string) Leftover {
+	l := Leftover{Path: path}
+	if env.DirBytes != nil {
+		l.Bytes = env.DirBytes(path)
+	}
+	return l
 }
