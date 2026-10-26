@@ -173,3 +173,39 @@ func TestJudgeVolumeTreatsAnEmptyListingOfANonEmptyVolumeAsData(t *testing.T) {
 		t.Error("an empty volume was kept")
 	}
 }
+
+// A name inside a volume must not be able to end the listing early or forge
+// another volume's entries; either would hide a marker file and make a
+// database look removable.
+func TestParseProbeIgnoresForgedMarkersAndForeignEntries(t *testing.T) {
+	want := map[string]bool{"a": true, "b": true}
+	out := "./a/x\x00./a/@@du\x00./a/PG_VERSION\x00./a/line\n@@du\n\x00./zzz/PG_VERSION\x00./b/cache\x00" +
+		duMark + "48\t./a\n4\t./b\n9\t./zzz\n"
+	found, sizes, ok := parseProbe(out, want)
+	if !ok {
+		t.Fatal("not probed")
+	}
+	has := func(vol, name string) bool {
+		for _, f := range found[vol] {
+			if f == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("a", "PG_VERSION") {
+		t.Errorf("forged marker hid a marker file: %v", found["a"])
+	}
+	if _, ok := found["zzz"]; ok {
+		t.Error("kept an entry for a volume that was not asked about")
+	}
+	if sizes["a"] != 48*1024 || sizes["b"] != 4*1024 || sizes["zzz"] != 0 {
+		t.Errorf("sizes %v", sizes)
+	}
+}
+
+func TestParseProbeNeedsItsMarker(t *testing.T) {
+	if _, _, ok := parseProbe("./a/PG_VERSION\x00", map[string]bool{"a": true}); ok {
+		t.Error("truncated output counted as probed")
+	}
+}

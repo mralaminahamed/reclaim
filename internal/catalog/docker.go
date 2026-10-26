@@ -201,8 +201,36 @@ func unusedVolumes() []Volume {
 // emptyVolume is the most du reports for a volume with nothing in it.
 const emptyVolume = 8192
 
-// duMark separates the file listing from the sizes in the probe's output.
-const duMark = "@@du"
+// duMark separates the file listing from the sizes in the probe's output. It
+// is NUL-delimited on both sides: a file name cannot contain NUL, and every
+// listed entry contains a "/", so no name in a volume can reproduce it.
+const duMark = "\x00@@du\x00"
+
+// parseProbe turns the probe's output into per-volume file names and sizes.
+// Entries for anything but a requested volume are ignored. A missing marker
+// means the output was cut short and is reported as not probed.
+func parseProbe(out string, want map[string]bool) (found map[string][]string, sizes map[string]int64, ok bool) {
+	listing, du, ok := strings.Cut(out, duMark)
+	if !ok {
+		return nil, nil, false
+	}
+	found, sizes = map[string][]string{}, map[string]int64{}
+	for _, entry := range strings.Split(listing, "\x00") {
+		vol, rest, ok := strings.Cut(strings.TrimPrefix(entry, "./"), "/")
+		if !ok || !want[vol] {
+			continue
+		}
+		found[vol] = append(found[vol], rest[strings.LastIndex(rest, "/")+1:])
+	}
+	for _, line := range strings.Split(du, "\n") {
+		var kb int64
+		var path string
+		if n, _ := fmt.Sscanf(line, "%d\t./%s", &kb, &path); n == 2 && want[path] {
+			sizes[path] = kb * 1024
+		}
+	}
+	return found, sizes, true
+}
 
 // probeVolumes lists file names a few levels into each volume and measures
 // each one. It needs an image with sh, find and du already on disk and never
@@ -215,11 +243,17 @@ func probeVolumes(names []string) (found map[string][]string, sizes map[string]i
 	if err != nil {
 		return nil, nil, false
 	}
-	args := []string{"run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "sh"}
+	// The image is whatever is already on this machine, so the container gets
+	// nothing it does not need: no network, a read-only root and mounts, no
+	// capabilities beyond reading files another uid owns (database data
+	// directories are mode 700).
+	args := []string{"run", "--rm", "--pull", "never", "--network", "none", "--read-only",
+		"--cap-drop", "ALL", "--cap-add", "DAC_READ_SEARCH", "--security-opt", "no-new-privileges",
+		"--entrypoint", "sh"}
 	for _, n := range names {
 		args = append(args, "-v", n+":/probe/"+n+":ro")
 	}
-	script := `cd /probe && find . -mindepth 2 -maxdepth 4 2>/dev/null | sed 's|^\./||'; echo ` + duMark + `; du -sk ./* 2>/dev/null`
+	script := `cd /probe && find . -mindepth 2 -maxdepth 4 -print0 2>/dev/null; printf '\0@@du\0'; du -sk ./* 2>/dev/null`
 	for _, img := range strings.Fields(string(imgs)) {
 		if strings.Contains(img, "<none>") {
 			continue
@@ -228,23 +262,13 @@ func probeVolumes(names []string) (found map[string][]string, sizes map[string]i
 		if err != nil {
 			continue
 		}
-		found, sizes = map[string][]string{}, map[string]int64{}
-		listing, du, _ := strings.Cut(string(out), duMark+"\n")
-		for _, line := range strings.Split(listing, "\n") {
-			vol, rest, ok := strings.Cut(line, "/")
-			if !ok {
-				continue
-			}
-			found[vol] = append(found[vol], rest[strings.LastIndex(rest, "/")+1:])
+		want := make(map[string]bool, len(names))
+		for _, n := range names {
+			want[n] = true
 		}
-		for _, line := range strings.Split(du, "\n") {
-			var kb int64
-			var path string
-			if n, _ := fmt.Sscanf(line, "%d\t./%s", &kb, &path); n == 2 {
-				sizes[path] = kb * 1024
-			}
+		if found, sizes, ok = parseProbe(string(out), want); ok {
+			return found, sizes, true
 		}
-		return found, sizes, true
 	}
 	return nil, nil, false
 }
