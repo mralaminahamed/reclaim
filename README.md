@@ -163,7 +163,7 @@ units additionally require `--allow-lossy`.
 | `--flatpak` | unused runtimes |
 | `--docker` | build cache, dangling images, unused networks |
 | `--docker-containers` | stopped containers, each named in the dry run — a stopped container can hold state nowhere else |
-| `--docker-volumes` | unused volumes — these may hold databases |
+| `--docker-volumes` | unused volumes, each named in the dry run; any holding a database (Postgres, MySQL, Mongo, Redis, SQLite markers or a data-store name) or that cannot be read is kept and counted |
 | `--podman` | build cache, dangling images, unused networks — podman's analogue of `--docker` |
 | `--podman-containers` | stopped podman containers, each named in the dry run |
 | `--podman-volumes` | unused podman volumes — these may hold databases |
