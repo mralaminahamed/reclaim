@@ -45,3 +45,6 @@ func NestedRootsFrom(home string, getenv func(string) string) []string {
 	}
 	return roots
 }
+
+// SandboxRoots is macOS-only: Linux has no ~/Library/Containers shape.
+func SandboxRoots(string) []string { return nil }

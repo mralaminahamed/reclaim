@@ -120,6 +120,57 @@ func TestIsCacheNameIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+// A macOS sandboxed app's cache sits one level deeper than the Application
+// Support shape NestedCaches matches -- <bundle-id>/Data/Library/Caches --
+// so it needs its own by-location sweep rather than a name match.
+func TestSandboxedCachesClaimsTheFixedCachesPath(t *testing.T) {
+	home := t.TempDir()
+	containers := mk(t, home, "Library", "Containers")
+	mk(t, containers, "com.apple.mail", "Data", "Library", "Caches")
+	// A sandboxed app with no Caches yet must not be claimed as a whole.
+	mk(t, containers, "com.example.empty", "Data", "Library")
+
+	r := unit.NewRegistry()
+	SandboxedCaches(r, []string{containers})
+
+	if len(r.All()) != 1 {
+		t.Fatalf("registered %d units, want 1", len(r.All()))
+	}
+	u := r.All()[0]
+	want := filepath.Join(containers, "com.apple.mail", "Data", "Library", "Caches")
+	if u.Paths[0] != want {
+		t.Errorf("path = %q, want %q", u.Paths[0], want)
+	}
+	if !u.Reversible || !u.Discovered {
+		t.Errorf("reversible %v discovered %v, want both true", u.Reversible, u.Discovered)
+	}
+}
+
+func TestSandboxedCachesSkipsAlreadyClaimedPaths(t *testing.T) {
+	home := t.TempDir()
+	containers := mk(t, home, "Library", "Containers")
+	caches := mk(t, containers, "com.apple.mail", "Data", "Library", "Caches")
+
+	r := unit.NewRegistry()
+	r.Add(&unit.Unit{ID: "already", Kind: unit.KindPaths, Paths: []string{caches}})
+	SandboxedCaches(r, []string{containers})
+
+	if len(r.All()) != 1 {
+		t.Errorf("registered %d units, want only the pre-existing one", len(r.All()))
+	}
+}
+
+// Firefox writes its cache directly to cache2/startupcache when a profile is
+// not behind XDG redirection. A profile like that was invisible to --discover
+// until these names joined the whitelist.
+func TestIsCacheNameCoversFirefoxOwnNames(t *testing.T) {
+	for _, name := range []string{"cache2", "Cache2", "startupcache", "StartupCache"} {
+		if !IsCacheName(name) {
+			t.Errorf("IsCacheName(%q) = false, want true", name)
+		}
+	}
+}
+
 func TestHeavyweightsReportsLargeDirsOnly(t *testing.T) {
 	root := t.TempDir()
 	big := mk(t, root, "big")

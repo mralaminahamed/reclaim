@@ -88,6 +88,25 @@ func TestNestedRootsFollowXDGConfigAndDataHome(t *testing.T) {
 	}
 }
 
+// Linux has no sandboxed-app shape to sweep; macOS's sits under
+// ~/Library/Containers.
+func TestSandboxRootsIsDarwinOnly(t *testing.T) {
+	got := SandboxRoots("/home/u")
+	if runtime.GOOS != "darwin" {
+		if len(got) != 0 {
+			t.Fatalf("roots %v, want none off darwin", got)
+		}
+		return
+	}
+	want := filepath.Join("/home/u", "Library", "Containers")
+	for _, r := range got {
+		if r == want {
+			return
+		}
+	}
+	t.Fatalf("roots %v do not include %q", got, want)
+}
+
 func TestNestedRootsIgnoreUnusableXDGValues(t *testing.T) {
 	home := t.TempDir()
 	for _, v := range []string{"", "rel/dir", "/", home, "/usr"} {
