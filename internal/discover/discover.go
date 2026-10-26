@@ -27,6 +27,9 @@ var cacheNames = []string{
 	// downloaded VSIX files and profile cache.
 	"graphitedawncache", "dawnwebgpucache", "extensions_crx_cache",
 	"cachedextensionvsixs", "cachedprofilesdata",
+	// Firefox's own on-disk names, hit directly when a profile is not behind
+	// XDG redirection (older configs, some Flatpak profiles).
+	"cache2", "startupcache",
 }
 
 // protectedNames hold real application state: session tokens, local databases,
@@ -116,6 +119,33 @@ func NestedCaches(r *unit.Registry, roots []string) {
 					Paths:      []string{d},
 				})
 			}
+		}
+	}
+}
+
+// SandboxedCaches claims the fixed Caches directory inside each sandboxed
+// app under roots: macOS's
+// ~/Library/Containers/<bundle-id>/Data/Library/Caches. NestedCaches cannot
+// reach this -- the cache sits one level deeper than the Application Support
+// shape it matches -- and Apple documents the whole path as disposable, the
+// same by-location claim XDGCaches makes for ~/Library/Caches, so it is
+// claimed whole rather than name-matched piece by piece.
+func SandboxedCaches(r *unit.Registry, roots []string) {
+	for _, root := range roots {
+		for _, app := range subdirs(root) {
+			d := filepath.Join(app, "Data", "Library", "Caches")
+			if !isDir(d) || r.Claimed(d) {
+				continue
+			}
+			r.Add(&unit.Unit{
+				ID:         "disc-container-" + strings.ReplaceAll(filepath.Base(app), " ", "-"),
+				Tier:       unit.TierArtifact,
+				Reversible: true,
+				Discovered: true,
+				Label:      "Containers/" + filepath.Base(app) + "/Caches",
+				Kind:       unit.KindPaths,
+				Paths:      []string{d},
+			})
 		}
 	}
 }

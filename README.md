@@ -10,7 +10,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-4C1.svg)](#status)
 [![Distros](https://img.shields.io/badge/distros-deb%20%7C%20rpm%20%7C%20arch%20%7C%20alpine%20%7C%20brew-4C1.svg)](#install)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-4C1.svg)](go.mod)
-[![Tests](https://img.shields.io/badge/tests-286-4C1.svg)](#development)
+[![Tests](https://img.shields.io/badge/tests-521-4C1.svg)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 </div>
@@ -164,6 +164,10 @@ units additionally require `--allow-lossy`.
 | `--docker` | build cache, dangling images, unused networks |
 | `--docker-containers` | stopped containers, each named in the dry run — a stopped container can hold state nowhere else |
 | `--docker-volumes` | unused volumes — these may hold databases |
+| `--podman` | build cache, dangling images, unused networks — podman's analogue of `--docker` |
+| `--podman-containers` | stopped podman containers, each named in the dry run |
+| `--podman-volumes` | unused podman volumes — these may hold databases |
+| `--orbstack`, `--colima`, `--lima` | macOS: the single VM disk each keeps every container, image and volume in — lossy: may hold a database nowhere else |
 | `--steam-compatdata` | Steam's Proton prefixes, each named by game in the dry run — lossy: some games keep saves or settings there and nowhere else |
 | `--timemachine` | macOS: thins Time Machine's local snapshots — lossy: a local snapshot is the only copy of the state it captured |
 | `--gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` |
@@ -172,6 +176,8 @@ units additionally require `--allow-lossy`.
 | `--browsers` | Chrome, Brave and Firefox HTTP caches |
 | `--playwright` | Playwright browser binaries |
 | `--claude-jobs`, `--claude-plugins` | Claude Code scratch and plugin cache |
+| `--mise`, `--asdf` | installed toolchains of these cross-language version managers — every pinned runtime re-downloads |
+| `--android-avd` | Android emulator devices, each named in the dry run — lossy: erases the device, not a cache |
 | `--sites-idle N` | dependency and build trees of projects idle for N days |
 | `--heavy` | discovered caches over 1GiB |
 
@@ -335,15 +341,18 @@ One from last month is a record the system itself is configured to expire.
 
 ### Idle projects
 
-`--sites-idle` knows around fifteen project shapes — Cargo, Maven, Gradle,
-Python venvs, Next, Elixir, CocoaPods, Terraform, .NET, Zig, Dart and the
-Node/PHP pair it started with. Each dependency directory is paired with a
+`--sites-idle` knows about twenty project shapes — Cargo, Maven, Gradle,
+Python venvs, Next, Elixir, CocoaPods, Terraform, .NET, Zig, Dart, Swift
+Package Manager, Bundler, Stack, Cabal, Elm, renv and the Node/PHP/Deno/Go
+vendor group it started with. Each dependency directory is paired with a
 manifest that proves what produced it, because `build`, `target`, `obj` and
 `bin` are ordinary words and a directory of that name with nothing beside it is
 somebody's source. Idleness is judged from a project's own files, never from its
 build output.
 
-Projects are found up to six levels below `--sites-root`, so a plugin inside
+`--sites-root` may be given more than once to scan several trees in one run
+(`--sites-root ~/Sites --sites-root ~/Workers`). Projects are found up to six
+levels below each root, so a plugin inside
 `Sites/<site>/wp-content/plugins/` is a project of its own. Hidden directories
 and symlinks are not entered.
 
@@ -654,7 +663,7 @@ cannot raise it, since nothing in the environment may widen what a run deletes.
 
 ```bash
 make test              # go test ./... and go vet ./...
-go test ./... -race    # 286 tests across 16 packages
+go test ./... -race    # 521 tests across 20 packages
 make dist deb rpm      # release artifacts
 ```
 

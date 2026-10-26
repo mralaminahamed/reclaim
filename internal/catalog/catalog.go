@@ -29,6 +29,8 @@ type Env struct {
 	// container unit is not offered: what cannot be listed cannot be
 	// previewed.
 	Docker func() (DockerState, error)
+	// Podman is Docker's rootless/daemonless sibling, listed the same way.
+	Podman func() (PodmanState, error)
 	// Getenv reads the environment, where tools are told their caches have
 	// moved. Nil reads as an empty environment.
 	Getenv func(string) string
@@ -47,7 +49,7 @@ func DefaultEnv(home string) Env {
 	return Env{Home: home, Has: func(bin string) bool {
 		_, err := exec.LookPath(bin)
 		return err == nil
-	}, Docker: dockerState, Getenv: os.Getenv, Ollama: ollamaList,
+	}, Docker: dockerState, Podman: podmanState, Getenv: os.Getenv, Ollama: ollamaList,
 		TmpRoots: tmpRoots(os.Getenv), TmpIdle: tmpIdle(os.Getenv)}
 }
 
@@ -141,6 +143,19 @@ func Build(env Env) *unit.Registry {
 	b.paths("devtools-mcp", "chrome-devtools-mcp", unit.TierPkgCache, true, "", ".cache/chrome-devtools-mcp")
 	b.paths("act-cache", "act (gh actions)", unit.TierPkgCache, true, "", ".cache/act")
 	b.paths("giget", "giget templates", unit.TierPkgCache, true, "", ".cache/giget")
+	// Downloaded archives, not yet extracted. The extracted, installed
+	// toolchains these feed are the costly part and sit a tier up, same split
+	// as hf-prune above.
+	b.paths("mise-cache", "mise download cache", unit.TierPkgCache, true, "",
+		".cache/mise", "Library/Caches/mise")
+	b.paths("asdf-downloads", "asdf download cache", unit.TierPkgCache, true, "", ".asdf/downloads")
+	// rustup renames this into toolchains/ mid-install, so unlike every other
+	// download cache here it is not safe to take while rustup is running. The
+	// risk is unbounded (no lock rule can see an in-flight install), so this
+	// stays at the free tier and nothing stronger reaches it by escalation.
+	b.paths("rustup-downloads", "rustup download cache", unit.TierPkgCache, true, "", ".rustup/downloads")
+	b.paths("volta-cache", "volta download cache", unit.TierPkgCache, true, "", ".volta/cache")
+	b.paths("android-cache", "Android SDK cache", unit.TierPkgCache, true, "", ".android/cache")
 
 	// Local model storage, which is what changed most about what fills a disk
 	// since the rest of this catalog was written. These reach tens to hundreds
@@ -203,6 +218,20 @@ func Build(env Env) *unit.Registry {
 	b.paths("coresimulator-caches", "simulator caches", unit.TierArtifact, true, "",
 		"Library/Developer/CoreSimulator/Caches")
 
+	// Logs and crash reports are written, never read back by the app that wrote
+	// them. Application Support is otherwise off limits (see above); these are
+	// the named exceptions: Chrome's updater keeps every extension package it
+	// has downloaded, Google Drive keeps its own logs, and an interrupted
+	// Docker Desktop install leaves a whole copy of the app behind.
+	b.paths("macos-logs", "application logs and crash reports", unit.TierPkgCache, true, "",
+		"Library/Logs")
+	b.paths("chrome-updater-cache", "Chrome updater cache", unit.TierPkgCache, true, "",
+		"Library/Application Support/Google/GoogleUpdater/crx_cache")
+	b.paths("drivefs-logs", "Google Drive logs", unit.TierPkgCache, true, "",
+		"Library/Application Support/Google/DriveFS/Logs")
+	b.paths("docker-install-leftover", "unfinished Docker install", unit.TierPkgCache, true, "",
+		"Library/Application Support/com.docker.install/in_progress")
+
 	// Xcode's own state is opt-in for the reason JetBrains is: deleting it
 	// under a running IDE breaks the session it is in the middle of, and lock
 	// detection has no rule for Xcode yet.
@@ -227,6 +256,14 @@ func Build(env Env) *unit.Registry {
 		".cache/ms-playwright", "Library/Caches/ms-playwright")
 
 	// Tier 3: costs a reindex or a full cold re-download on next use.
+	// Cross-language version managers: every pinned runtime re-downloads, and
+	// on a polyglot machine this reaches multiple gigabytes, so each gets its
+	// own flag rather than folding into gradle/maven's unflagged siblings.
+	b.paths("mise-installs", "mise installed tools", unit.TierColdReload, true, "--mise",
+		".local/share/mise/installs")
+	b.paths("asdf-installs", "asdf installed tools", unit.TierColdReload, true, "--asdf",
+		".asdf/installs")
+	b.androidAVDs()
 	b.jetbrainsOld()
 	b.paths("jetbrains-cache", "JetBrains caches", unit.TierColdReload, true, "--jetbrains",
 		".cache/JetBrains", "Library/Caches/JetBrains")
@@ -234,8 +271,9 @@ func Build(env Env) *unit.Registry {
 	b.paths("gradle-wrapper", "gradle wrapper", unit.TierColdReload, true, "--gradle", ".gradle/wrapper")
 	b.paths("maven-repo", "maven repository", unit.TierColdReload, true, "--maven", ".m2/repository")
 	b.paths("chrome-cache", "chrome cache", unit.TierColdReload, true, "--browsers",
-		".cache/google-chrome", ".cache/Google")
-	b.paths("brave-cache", "brave cache", unit.TierColdReload, true, "--browsers", ".cache/BraveSoftware")
+		".cache/google-chrome", ".cache/Google", "Library/Caches/Google")
+	b.paths("brave-cache", "brave cache", unit.TierColdReload, true, "--browsers",
+		".cache/BraveSoftware", "Library/Caches/BraveSoftware", "Library/Caches/com.brave.Browser")
 	b.paths("firefox-cache", "firefox cache", unit.TierColdReload, true, "--browsers", ".cache/mozilla")
 
 	// Claude Code scratch state. Jobs and plugin versions are re-fetched or
@@ -279,6 +317,23 @@ func Build(env Env) *unit.Registry {
 	if env.Has != nil && env.Has("docker") {
 		b.docker()
 	}
+	if env.Has != nil && env.Has("podman") {
+		b.podman()
+	}
+
+	// macOS Docker Desktop alternatives keep every container, image and
+	// volume inside one VM disk image, directly under $HOME -- outside every
+	// root --discover sweeps, so nothing else in this catalog ever sees them.
+	// Same claim as docker-volumes: may hold a database nowhere else, so each
+	// gets its own flag rather than folding into --docker.
+	b.paths("orbstack-vm", "OrbStack VM disk", unit.TierIrreplaceable, false, "--orbstack",
+		".orbstack/data", "Library/Group Containers/HUAQ24HBR6.dev.orbstack/data")
+	// Newer colima runs its VM through Lima, under ~/.lima/colima: --lima
+	// alone can therefore take it too. Both flags name a VM disk, so a person
+	// passing either already means to drop a container runtime's storage.
+	b.paths("colima-vm", "Colima VM disk", unit.TierIrreplaceable, false, "--colima", ".colima")
+	b.paths("lima-vm", "Lima VM disks", unit.TierIrreplaceable, false, "--lima", ".lima")
+
 	b.tmp()
 	return b.r
 }

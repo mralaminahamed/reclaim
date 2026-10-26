@@ -28,3 +28,11 @@ func NestedRoots(home string) []string {
 // NestedRootsFrom is NestedRoots: the XDG variables do not move
 // ~/Library/Application Support.
 func NestedRootsFrom(home string, _ func(string) string) []string { return NestedRoots(home) }
+
+// SandboxRoots is ~/Library/Containers, where every sandboxed app -- Mail,
+// Messages, most Mac App Store apps -- keeps its data one layer below
+// NestedRoots's shape: <bundle-id>/Data/Library/Caches rather than
+// <app>/Cache directly inside Application Support.
+func SandboxRoots(home string) []string {
+	return []string{filepath.Join(home, "Library", "Containers")}
+}

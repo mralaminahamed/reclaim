@@ -139,3 +139,52 @@ func TestBrewIsAbsentWithoutHomebrew(t *testing.T) {
 		t.Error("registered without brew installed")
 	}
 }
+
+// Logs, crash reports and installer leftovers under ~/Library are the named
+// exceptions to "Application Support is not ours": each is regenerable or
+// never read back, so each registers as a free, reversible unit.
+func TestMacOSLeftoversAreFreeAndReversible(t *testing.T) {
+	home := t.TempDir()
+	ids := map[string]string{
+		"macos-logs":              "Library/Logs",
+		"chrome-updater-cache":    "Library/Application Support/Google/GoogleUpdater/crx_cache",
+		"drivefs-logs":            "Library/Application Support/Google/DriveFS/Logs",
+		"docker-install-leftover": "Library/Application Support/com.docker.install/in_progress",
+	}
+	for _, rel := range ids {
+		mkdir(t, filepath.Join(home, rel))
+	}
+
+	r := Build(Env{Home: home, Has: func(string) bool { return false }})
+
+	for id := range ids {
+		u, ok := r.Get(id)
+		if !ok {
+			t.Errorf("%s not registered", id)
+			continue
+		}
+		if !u.Reversible || u.Tier != unit.TierPkgCache || u.Flag != "" {
+			t.Errorf("%s: reversible %v tier %v flag %q, want a free reversible unit", id, u.Reversible, u.Tier, u.Flag)
+		}
+	}
+}
+
+// The macOS browser caches sit behind --browsers like their Linux twins: a
+// running browser's cache is in use, so none of them runs by default.
+func TestMacOSBrowserCachesAreOptIn(t *testing.T) {
+	home := t.TempDir()
+	mkdir(t, filepath.Join(home, "Library/Caches/Google"))
+	mkdir(t, filepath.Join(home, "Library/Caches/BraveSoftware"))
+
+	r := Build(Env{Home: home, Has: func(string) bool { return false }})
+
+	for _, id := range []string{"chrome-cache", "brave-cache"} {
+		u, ok := r.Get(id)
+		if !ok {
+			t.Fatalf("%s not registered from Library/Caches", id)
+		}
+		if u.Flag != "--browsers" {
+			t.Errorf("%s flag %q, want --browsers", id, u.Flag)
+		}
+	}
+}
