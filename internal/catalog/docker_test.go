@@ -83,3 +83,129 @@ type testErr struct{}
 func (testErr) Error() string { return "daemon unreachable" }
 
 var errTest error = testErr{}
+
+// docker volume prune deleted every unused volume, databases included, and the
+// dry run could not say which. The unit now removes only volumes shown not to
+// hold a store, by name, and says how many it kept.
+func TestDockerVolumesRemovesOnlyNonDataByName(t *testing.T) {
+	r := Build(dockerEnv(func() (DockerState, error) {
+		return DockerState{Volumes: []Volume{
+			{Name: "sitemon_go-build", Bytes: 500},
+			{Name: "act-toolcache", Bytes: 250},
+			{Name: "carelane_pg", Data: true},
+		}}, nil
+	}))
+	u, ok := r.Get("docker-volumes")
+	if !ok {
+		t.Fatal("docker-volumes missing")
+	}
+	if u.Command != "docker volume rm sitemon_go-build act-toolcache" {
+		t.Errorf("command %q", u.Command)
+	}
+	if u.Bytes != 750 {
+		t.Errorf("bytes %d, want only the removable volumes (750)", u.Bytes)
+	}
+	if strings.Contains(u.Command, "carelane_pg") || strings.Contains(u.Command, "prune") {
+		t.Errorf("command takes a data volume or prunes blindly: %q", u.Command)
+	}
+	if !strings.Contains(strings.Join(u.Detail, " "), "1 kept") {
+		t.Errorf("detail %v does not say what was kept", u.Detail)
+	}
+}
+
+func TestDockerVolumesAbsentWhenEverythingIsData(t *testing.T) {
+	r := Build(dockerEnv(func() (DockerState, error) {
+		return DockerState{Volumes: []Volume{{Name: "x_pg", Data: true}}}, nil
+	}))
+	if _, ok := r.Get("docker-volumes"); ok {
+		t.Error("registered a unit with nothing safe to remove")
+	}
+}
+
+func TestDockerVolumesAbsentWhenTheListFails(t *testing.T) {
+	r := Build(dockerEnv(func() (DockerState, error) { return DockerState{}, errTest }))
+	if _, ok := r.Get("docker-volumes"); ok {
+		t.Error("registered without a list")
+	}
+}
+
+// Names reach a shell; anything outside docker's alphabet is dropped.
+func TestDockerVolumesRefusesMalformedNames(t *testing.T) {
+	r := Build(dockerEnv(func() (DockerState, error) {
+		return DockerState{Volumes: []Volume{{Name: "a; rm -rf ~"}}}, nil
+	}))
+	if _, ok := r.Get("docker-volumes"); ok {
+		t.Error("registered a unit for a malformed name")
+	}
+}
+
+func TestVolumeIsData(t *testing.T) {
+	cases := []struct {
+		name   string
+		found  []string
+		probed bool
+		want   bool
+	}{
+		{"3a1ef870", []string{"PG_VERSION", "base"}, true, true},
+		{"3a1ef870", []string{"WiredTiger.wt"}, true, true},
+		{"3a1ef870", []string{"dump.rdb"}, true, true},
+		{"app.sqlite3x", []string{"app.sqlite3"}, true, true},
+		{"jobpulse_postgres-data", nil, true, true},
+		{"infra_mongo", nil, true, true},
+		{"sitemon_go-build", []string{"cache"}, true, false},
+		{"3a1ef870", nil, true, false},
+		{"3a1ef870", nil, false, true}, // unreadable: keep
+	}
+	for _, c := range cases {
+		if got := volumeIsData(c.name, c.found, c.probed); got != c.want {
+			t.Errorf("volumeIsData(%q, %v, %v) = %v, want %v", c.name, c.found, c.probed, got, c.want)
+		}
+	}
+}
+
+// The probe once returned an empty listing for every volume, and every
+// database read as removable. Content with nothing listed is unreadable.
+func TestJudgeVolumeTreatsAnEmptyListingOfANonEmptyVolumeAsData(t *testing.T) {
+	if !judgeVolume("3a1ef870", nil, 48<<20, true) {
+		t.Error("48 MiB volume with no listing was judged removable")
+	}
+	if judgeVolume("3a1ef870", nil, 4096, true) {
+		t.Error("an empty volume was kept")
+	}
+}
+
+// A name inside a volume must not be able to end the listing early or forge
+// another volume's entries; either would hide a marker file and make a
+// database look removable.
+func TestParseProbeIgnoresForgedMarkersAndForeignEntries(t *testing.T) {
+	want := map[string]bool{"a": true, "b": true}
+	out := "./a/x\x00./a/@@du\x00./a/PG_VERSION\x00./a/line\n@@du\n\x00./zzz/PG_VERSION\x00./b/cache\x00" +
+		duMark + "48\t./a\n4\t./b\n9\t./zzz\n"
+	found, sizes, ok := parseProbe(out, want)
+	if !ok {
+		t.Fatal("not probed")
+	}
+	has := func(vol, name string) bool {
+		for _, f := range found[vol] {
+			if f == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("a", "PG_VERSION") {
+		t.Errorf("forged marker hid a marker file: %v", found["a"])
+	}
+	if _, ok := found["zzz"]; ok {
+		t.Error("kept an entry for a volume that was not asked about")
+	}
+	if sizes["a"] != 48*1024 || sizes["b"] != 4*1024 || sizes["zzz"] != 0 {
+		t.Errorf("sizes %v", sizes)
+	}
+}
+
+func TestParseProbeNeedsItsMarker(t *testing.T) {
+	if _, _, ok := parseProbe("./a/PG_VERSION\x00", map[string]bool{"a": true}); ok {
+		t.Error("truncated output counted as probed")
+	}
+}
