@@ -34,7 +34,7 @@ _reclaim() {
         '--json[machine-readable output]'
         '--workers[parallel probe workers]:count'
         '--sites-idle[include trees of projects idle N days]:days'
-        '*--sites-root[where projects live]:directory:_files -/'
+        '--sites-root[where projects live]:directory:_files -/'
         '--only[restrict to these unit ids]:unit:_reclaim_units'
         '--exclude[drop these unit ids]:unit:_reclaim_units'
         '--with[opt-in flag by name]:group:(gradle maven jetbrains browsers playwright docker docker-containers docker-volumes steam-compatdata timemachine site-data claude-vm system claude-jobs claude-plugins claude-history heavy flatpak kernels models xcode simulators obsolete trash mise asdf android-avd podman podman-containers podman-volumes orbstack colima lima)'
