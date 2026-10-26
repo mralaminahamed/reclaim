@@ -35,7 +35,10 @@ var depDirs = []struct {
 	needsProof bool
 }{
 	{dir: "node_modules", manifests: []string{"package.json"}},
-	{dir: "vendor", manifests: []string{"composer.json"}},
+	// go.mod and deno.json(c) are side effects of `go mod vendor` and
+	// `deno vendor`, which both write a directory literally named "vendor" --
+	// the same name Composer uses, so one row proves all three.
+	{dir: "vendor", manifests: []string{"composer.json", "go.mod", "deno.json", "deno.jsonc"}},
 	{dir: "target", manifests: []string{"Cargo.toml", "pom.xml"}},
 	{dir: "build", manifests: []string{"build.gradle", "build.gradle.kts", "pubspec.yaml"}},
 	{dir: ".venv", manifests: []string{"pyproject.toml", "requirements.txt", "setup.py"}},
@@ -54,16 +57,27 @@ var depDirs = []struct {
 	{dir: "zig-out", manifests: []string{"build.zig"}},
 	{dir: ".dart_tool", manifests: []string{"pubspec.yaml"}},
 	{dir: "dist", manifests: []string{"package.json"}, needsProof: true},
+	{dir: ".build", manifests: []string{"Package.swift"}},
+	{dir: "vendor/bundle", manifests: []string{"Gemfile"}},
+	{dir: ".stack-work", manifests: []string{"stack.yaml"}},
+	{dir: "dist-newstyle", manifests: []string{"*.cabal"}},
+	{dir: "elm-stuff", manifests: []string{"elm.json"}},
+	{dir: "renv/library", manifests: []string{"renv.lock"}},
 }
 
 // artifactDirs is every directory name in depDirs, for the idleness walk to
 // skip. Built from the one table so the two cannot drift: a build output
 // counted as a source makes a dormant project look busy, and it is then never
 // offered.
+//
+// A nested entry such as "vendor/bundle" or "renv/library" contributes its
+// last component ("bundle", "library"): the walk only ever compares a single
+// directory name at a time, so a multi-component dir would otherwise never
+// match and its contents would be walked as if they were source.
 var artifactDirs = func() map[string]bool {
 	m := map[string]bool{".git": true}
 	for _, d := range depDirs {
-		m[d.dir] = true
+		m[filepath.Base(d.dir)] = true
 	}
 	return m
 }()
@@ -183,7 +197,9 @@ func claimIdle(r *unit.Registry, proj, rel string, cutoff time.Time) {
 			return
 		}
 		r.Add(&unit.Unit{
-			ID:         "idle-" + d.dir + "-" + id,
+			// "/" is swapped out of the id: --only and --exclude match ids
+			// with filepath.Match, whose "*" does not cross a "/".
+			ID:         "idle-" + strings.ReplaceAll(d.dir, "/", "-") + "-" + id,
 			Tier:       unit.TierLossy,
 			Reversible: false,
 			Label:      rel + "/" + d.dir + " (" + itoa(idle) + "d idle)",
