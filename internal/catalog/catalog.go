@@ -157,6 +157,28 @@ func Build(env Env) *unit.Registry {
 	b.paths("volta-cache", "volta download cache", unit.TierPkgCache, true, "", ".volta/cache")
 	b.paths("android-cache", "Android SDK cache", unit.TierPkgCache, true, "", ".android/cache")
 
+	// Tool caches under ~/.cache that the tool rebuilds on its next run: linters,
+	// formatters, bundlers and type checkers. Left out on purpose: poetry and
+	// prisma (their cache holds downloaded engines and virtualenvs that cost a
+	// re-download or break a project) and terraform (the plugin cache can be a
+	// pinned, offline provider mirror).
+	b.paths("devtool-caches", "linter, formatter and bundler caches", unit.TierPkgCache, true, "",
+		".cache/eslint", ".cache/prettier", ".cache/typescript", ".cache/vite",
+		".cache/webpack", ".cache/mypy", ".cache/ruff", ".cache/pre-commit",
+		".cache/electron", ".cache/swift-package-manager")
+	// Named one by one: ~/.expo also holds state (the login session), so the
+	// parent directory is not a cache.
+	b.paths("expo-caches", "Expo caches", unit.TierPkgCache, true, "",
+		".expo/android-apk-cache", ".expo/ios-simulator-app-cache", ".expo/native-modules-cache",
+		".expo/schema-cache", ".expo/template-cache", ".expo/versions-cache")
+	// Cloud and cluster CLIs write logs and discovery caches they never read
+	// back for anything but speed.
+	b.paths("cli-logs", "cloud CLI logs and discovery caches", unit.TierPkgCache, true, "",
+		".azure/logs", ".config/gcloud/logs", ".kube/cache")
+	b.paths("version-manager-caches", "version manager download caches", unit.TierPkgCache, true, "",
+		".pyenv/cache", ".rbenv/cache", ".hex/cache", ".opam/download-cache",
+		".oh-my-zsh/cache", ".android/build-cache")
+
 	// Local model storage, which is what changed most about what fills a disk
 	// since the rest of this catalog was written. These reach tens to hundreds
 	// of gigabytes.
@@ -217,6 +239,9 @@ func Build(env Env) *unit.Registry {
 		"Library/Caches/com.apple.dt.Xcode")
 	b.paths("coresimulator-caches", "simulator caches", unit.TierArtifact, true, "",
 		"Library/Developer/CoreSimulator/Caches")
+	// Xcode regenerates the documentation index from the installed SDK.
+	b.paths("xcode-doc-cache", "Xcode documentation cache", unit.TierArtifact, true, "",
+		"Library/Developer/Xcode/DocumentationCache")
 
 	// Logs and crash reports are written, never read back by the app that wrote
 	// them. Application Support is otherwise off limits (see above); these are
